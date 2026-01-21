@@ -1,0 +1,53 @@
+name: lume_app
+description: "LUME Student Wallet Application"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # ================= API =================
+  http: ^1.2.0
+
+  # ================= UI / FONTS =================
+  google_fonts: ^6.1.0
+  lottie: ^3.1.0
+  flutter_svg: ^2.0.9   # ✅ ADDED for card brand SVGs
+
+  # ================= QR & SCANNING =================
+  mobile_scanner: ^3.5.6        # Tap & Pay QR scanner
+  image_picker: ^1.0.7          # Scan QR from gallery
+  qr_flutter: ^4.1.0            # Generate My QR
+
+  # ================= SHARING =================
+  share_plus: ^7.2.1
+  shared_preferences: ^2.2.2
+
+  # ================= FILE & GALLERY =================
+  path_provider: ^2.1.2
+  permission_handler: ^11.3.1
+
+  # ================= PUSH NOTIFICATIONS =================
+  firebase_core: ^3.15.2
+  firebase_messaging: ^15.2.10
+  flutter_local_notifications: ^17.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/lottie/
+    - assets/card_brands/  
