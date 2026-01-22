@@ -19,14 +19,43 @@ class PinVerifyScreen extends StatefulWidget {
 }
 
 class _PinVerifyScreenState extends State<PinVerifyScreen> {
-  final TextEditingController pinController = TextEditingController();
+  static const int pinLength = 4;
 
+  String enteredPin = "";
   String? error;
   bool locked = false;
   bool verifying = false;
 
+  // ================= PIN INPUT =================
+
+  void _onKeyTap(String value) {
+    if (locked || verifying) return;
+    if (enteredPin.length >= pinLength) return;
+
+    setState(() {
+      enteredPin += value;
+      error = null;
+    });
+
+    if (enteredPin.length == pinLength) {
+      _verify();
+    }
+  }
+
+  void _onDelete() {
+    if (locked || verifying) return;
+    if (enteredPin.isEmpty) return;
+
+    setState(() {
+      enteredPin =
+          enteredPin.substring(0, enteredPin.length - 1);
+    });
+  }
+
+  // ================= VERIFY =================
+
   Future<void> _verify() async {
-    if (pinController.text.length != 4) {
+    if (enteredPin.length != pinLength) {
       setState(() {
         error = "Enter 4-digit PIN";
       });
@@ -41,7 +70,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
     final res = await ApiService.verifyPin(
       regId: widget.regId,
       type: widget.type,
-      pin: pinController.text,
+      pin: enteredPin,
     );
 
     setState(() {
@@ -66,83 +95,209 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
 
     if (res["message"] == "INVALID_PIN") {
       setState(() {
+        enteredPin = "";
         error =
             "Wrong PIN. Attempts left: ${res["attemptsLeft"]}";
       });
     }
   }
 
+  // ================= UI =================
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text("${widget.type.toUpperCase()} PIN"),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: const BackButton(color: Colors.black),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              "Enter PIN",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-
-            TextField(
-              controller: pinController,
-              maxLength: 4,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              enabled: !locked,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: "****",
-              ),
-            ),
-
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  error!,
-                  style: const TextStyle(color: Colors.red),
-                ),
-              ),
-
             const SizedBox(height: 24),
 
-            if (!locked)
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: verifying ? null : _verify,
-                  child: verifying
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("Verify"),
+            // ===== TITLE =====
+            const Text(
+              "Enter PIN",
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
+            const SizedBox(height: 32),
+
+            // ===== PIN DOTS =====
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(pinLength, (index) {
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: index < enteredPin.length
+                        ? Colors.grey.shade800
+                        : Colors.grey.shade300,
+                  ),
+                );
+              }),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ===== ERROR =====
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontSize: 13,
+                  ),
                 ),
               ),
 
-            if (locked)
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: OutlinedButton(
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PinSettingsScreen(
-                          regId: widget.regId,
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Text("Reset PIN"),
+            const SizedBox(height: 16),
+
+            // ===== FORGOT PIN =====
+            if (!locked)
+              GestureDetector(
+                onTap: () async {
+                  await Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          PinSettingsScreen(regId: widget.regId),
+                    ),
+                  );
+
+                  if (mounted) {
+                    Navigator.of(context)
+                        .popUntil((route) => route.isFirst);
+                  }
+                },
+                child: const Text(
+                  "Forgot PIN",
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.blue,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
+
+            const Spacer(),
+
+            // ===== RESET PIN (LOCKED) =====
+            if (locked)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              PinSettingsScreen(regId: widget.regId),
+                        ),
+                      );
+
+                      if (mounted) {
+                        Navigator.of(context)
+                            .popUntil((route) => route.isFirst);
+                      }
+                    },
+                    child: const Text("Reset PIN"),
+                  ),
+                ),
+              ),
+
+            if (!locked) _buildKeypad(),
+
+            const SizedBox(height: 24),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ================= KEYPAD =================
+
+  Widget _buildKeypad() {
+    return Column(
+      children: [
+        _keypadRow(["1", "2", "3"]),
+        _keypadRow(["4", "5", "6"]),
+        _keypadRow(["7", "8", "9"]),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(width: 80),
+            _keyButton("0"),
+            _iconButton(Icons.backspace_outlined, _onDelete),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _keypadRow(List<String> keys) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: keys.map(_keyButton).toList(),
+    );
+  }
+
+  Widget _keyButton(String value) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(40),
+        onTap: () => _onKeyTap(value),
+        child: Container(
+          width: 64,
+          height: 64,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.grey.shade200,
+          ),
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _iconButton(IconData icon, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(40),
+        onTap: onTap,
+        child: Container(
+          width: 64,
+          height: 64,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.grey.shade200,
+          ),
+          child: Icon(icon, size: 22),
         ),
       ),
     );

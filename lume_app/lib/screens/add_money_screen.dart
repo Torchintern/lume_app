@@ -5,13 +5,21 @@ import 'select_payment_method_screen.dart';
 class AddMoneyScreen extends StatefulWidget {
   final int regId;
   final String fullName;
+  final String mobile;
   final String upiId;
+  final String walletStatus;
+  final int aadhaarVerified;
+  final int panVerified;
 
   const AddMoneyScreen({
     super.key,
     required this.regId,
     required this.fullName,
+    required this.mobile,
     required this.upiId,
+    required this.walletStatus,
+    required this.aadhaarVerified,
+    required this.panVerified,
   });
 
   @override
@@ -85,12 +93,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       body: Column(
         children: [
           const SizedBox(height: 30),
-
-          const Text(
-            "Add",
-            style: TextStyle(color: Colors.grey),
-          ),
-
+          const Text("Add", style: TextStyle(color: Colors.grey)),
           const SizedBox(height: 10),
 
           Text(
@@ -148,12 +151,15 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                SelectPaymentMethodScreen(
+                            builder: (_) => SelectPaymentMethodScreen(
                               regId: widget.regId,
                               amount: amount,
                               fullName: widget.fullName,
+                              mobile: widget.mobile,
                               upiId: widget.upiId,
+                              walletStatus: widget.walletStatus,
+                              aadhaarVerified: widget.aadhaarVerified,
+                              panVerified: widget.panVerified,
                             ),
                           ),
                         );

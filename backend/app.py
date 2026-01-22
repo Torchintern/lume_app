@@ -405,7 +405,6 @@ def update_upi():
 # ================= WALLET BALANCE =================
 @app.route("/api/wallet/balance/<int:reg_id>", methods=["GET"])
 def get_wallet_balance(reg_id):
-    auto_cancel_expired_pending_transactions()
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
@@ -1000,7 +999,6 @@ def _log_txn(
 # ================= TRANSACTION HISTORY =================
 @app.route("/api/transactions/<int:reg_id>", methods=["GET"])
 def get_transactions(reg_id):
-    auto_cancel_expired_pending_transactions()
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
@@ -1090,7 +1088,12 @@ def get_transactions(reg_id):
             if t["status"] == "success":
                 status_text = "Success"
             elif t["status"] == "failed":
-                status_text = "Failed"
+                if t["failure_reason"] == "USER_CANCELLED":
+                    status_text = "Cancelled"
+                elif t["failure_reason"] == "AUTO_CANCELLED_TIMEOUT":
+                    status_text = "Expired"
+                else:
+                    status_text = "Failed"
             else:
                 status_text = "Pending"
 
@@ -1283,6 +1286,35 @@ def set_pin():
     conn.commit()
     return {"message": "PIN_SET_SUCCESS"}, 200
 
+# ============ PIN STATUS  ===============
+@app.route("/api/pin/status/<int:reg_id>", methods=["GET"])
+def get_pin_status(reg_id):
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT
+            wallet_pin_hash IS NOT NULL AS wallet_pin_set,
+            card_pin_hash IS NOT NULL AS card_pin_set
+        FROM wallet_security
+        WHERE reg_id=%s
+    """, (reg_id,))
+
+    row = c.fetchone()
+    c.close()
+    conn.close()
+
+    if not row:
+        return {
+            "wallet_pin_set": False,
+            "card_pin_set": False
+        }, 200
+
+    return {
+        "wallet_pin_set": bool(row["wallet_pin_set"]),
+        "card_pin_set": bool(row["card_pin_set"])
+    }, 200
+
 # ==================== Verify PIN ======================
 @app.route("/api/pin/verify", methods=["POST"])
 def verify_pin_api():
@@ -1401,13 +1433,19 @@ def verify_pin_api():
 # =============== Add money =================
 @app.route("/api/wallet/add-money/init", methods=["POST"])
 def init_add_money():
-    auto_cancel_expired_pending_transactions()
     d = request.json
+
+    if not d or "reg_id" not in d or "amount" not in d:
+        return {"message": "INVALID_REQUEST"}, 400
+
+    amount = float(d["amount"])
+    if amount <= 0:
+        return {"message": "INVALID_AMOUNT"}, 400
 
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
-    # 🔹 Fetch user's mobile securely
+    # 🔹 Fetch mobile
     c.execute("""
         SELECT s.mobile
         FROM registered_students rs
@@ -1421,12 +1459,10 @@ def init_add_money():
         conn.close()
         return {"message": "USER_NOT_FOUND"}, 404
 
-    mobile = user["mobile"]
+    send_mobile_otp(user["mobile"])
 
-    # 🔹 Create pending transaction
     c.execute("""
-        INSERT INTO wallet_transactions
-        (
+        INSERT INTO wallet_transactions (
             sender_reg_id,
             receiver_reg_id,
             amount,
@@ -1435,14 +1471,11 @@ def init_add_money():
             txn_type,
             card_id
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, 'card', 'pending', 'add_money', %s)
     """, (
         d["reg_id"],
         d["reg_id"],
-        d["amount"],
-        "card",
-        "pending",
-        "add_money",
+        amount,
         d.get("saved_card_id")
     ))
 
@@ -1450,8 +1483,6 @@ def init_add_money():
     conn.commit()
     c.close()
     conn.close()
-
-    send_mobile_otp(mobile)
 
     return {"txn_id": txn_id}, 200
 
@@ -1498,12 +1529,63 @@ def get_saved_cards(reg_id):
     conn.close()
 
     return cards, 200
+# ============== Cancel add money =================
+@app.route("/api/wallet/add-money/cancel", methods=["POST"])
+def cancel_add_money():
+    d = request.json
+    txn_id = d.get("txn_id")
+
+    if not txn_id:
+        return {"message": "INVALID_REQUEST"}, 400
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT status
+            FROM wallet_transactions
+            WHERE id=%s
+            FOR UPDATE
+        """, (txn_id,))
+
+        txn = c.fetchone()
+        if not txn:
+            return {"message": "INVALID_TXN"}, 404
+
+        if txn["status"] != "pending":
+            return {
+                "message": "TXN_ALREADY_PROCESSED",
+                "status": txn["status"]
+            }, 200
+
+        c.execute("""
+            UPDATE wallet_transactions
+            SET status='failed',
+                failure_reason='USER_CANCELLED'
+            WHERE id=%s
+        """, (txn_id,))
+
+        conn.commit()
+        return {"message": "PAYMENT_CANCELLED"}, 200
+
+    except Exception as e:
+        conn.rollback()
+        return {"message": "CANCEL_FAILED"}, 500
+
+    finally:
+        c.close()
+        conn.close()
+
 # ============== Verify add money =============
 @app.route("/api/wallet/add-money/verify", methods=["POST"])
 def verify_add_money():
     auto_cancel_expired_pending_transactions()
     d = request.json
-    txn_id = d["txn_id"]
+    txn_id = d.get("txn_id")
+
+    if not txn_id or "otp" not in d:
+        return {"status": "failed", "reason": "INVALID_REQUEST"}, 400
 
     if not verify_otp(d["otp"]):
         _update_txn_status(txn_id, "failed", "INVALID_OTP")
@@ -1512,37 +1594,55 @@ def verify_add_money():
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
-    c.execute("""
-        SELECT sender_reg_id, amount
-        FROM wallet_transactions
-        WHERE id=%s AND status='pending'
-        FOR UPDATE
+    try:
+        c.execute("""
+            SELECT sender_reg_id, amount, status
+            FROM wallet_transactions
+            WHERE id=%s
+            FOR UPDATE
+        """, (txn_id,))
 
-    """, (txn_id,))
-    txn = c.fetchone()
-    if not txn:
-        return {"status": "failed", "reason": "INVALID_TXN"}, 400
+        txn = c.fetchone()
+        if not txn:
+            return {"status": "failed", "reason": "INVALID_TXN"}, 400
+
+        if txn["status"] != "pending":
+            return {
+                "status": txn["status"],
+                "reason": txn.get("failure_reason")
+            }, 200
+
+        # Credit wallet
+        c.execute("""
+            UPDATE wallets
+            SET balance = balance + %s
+            WHERE registered_student_id=%s
+        """, (txn["amount"], txn["sender_reg_id"]))
+
+        #  Mark success
+        c.execute("""
+            UPDATE wallet_transactions
+            SET status='success', failure_reason=NULL
+            WHERE id=%s
+        """, (txn_id,))
+
+        #  Save card ONLY if checkbox selected
+        if d.get("save_card") is True:
+            save_card_token(d.get("card_data", {}), txn["sender_reg_id"])
+
+        conn.commit()
+        return {"status": "success"}, 200
+
+    except Exception as e:
+        conn.rollback()
+        _update_txn_status(txn_id, "failed", str(e))
+        return {"status": "failed"}, 500
+
+    finally:
+        c.close()
+        conn.close()
 
 
-    # Credit wallet
-    c.execute("""
-        UPDATE wallets
-        SET balance = balance + %s
-        WHERE registered_student_id=%s
-    """, (txn["amount"], txn["sender_reg_id"]))
-
-    # Mark success
-    _update_txn_status(txn_id, "success", None)
-
-    # Save card if needed
-    if d.get("save_card"):
-        save_card_token(d["card_data"], txn["sender_reg_id"])
-
-    conn.commit()
-    c.close()
-    conn.close()
-
-    return {"status": "success"}, 200
 # helpers
 def _update_txn_status(txn_id, status, reason):
     conn = get_db_connection()
@@ -1558,11 +1658,23 @@ def _update_txn_status(txn_id, status, reason):
 
 
 def save_card_token(card_data, reg_id):
-    last4 = card_data["card_number"][-4:]
+    if not card_data:
+        return
+
+    card_number = card_data.get("card_number", "")
+    if len(card_number) < 4:
+        return
+
+    last4 = card_number[-4:]
+
+    brand = card_data.get("brand", "unknown")
+    card_type = card_data.get("cardType") or card_data.get("card_type") or "debit"
+
     token = "tok_" + last4
 
     conn = get_db_connection()
     c = conn.cursor()
+
     c.execute("""
         INSERT INTO saved_cards (
             reg_id,
@@ -1576,12 +1688,14 @@ def save_card_token(card_data, reg_id):
         reg_id,
         last4,
         token,
-        card_data["brand"],
-        card_data["cardType"]
+        brand,
+        card_type
     ))
+
     conn.commit()
     c.close()
     conn.close()
+
 
 
 # ================== Save cards ===================
@@ -1591,7 +1705,7 @@ def save_card():
 
     last4 = d["card_number"][-4:]
     brand = d.get("brand", "unknown")
-    card_type = d.get("cardType", "debit")  # ✅ SAFE DEFAULT
+    card_type = d.get("cardType", "debit") 
 
     conn = get_db_connection()
     c = conn.cursor()

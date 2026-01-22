@@ -19,7 +19,7 @@ class DashboardScreen extends StatefulWidget {
   final String walletStatus;
   final int aadhaarVerified;
   final int panVerified;
-
+  final String initialTab;
   const DashboardScreen({
     super.key,
     required this.regId,
@@ -29,6 +29,7 @@ class DashboardScreen extends StatefulWidget {
     required this.walletStatus,
     required this.aadhaarVerified,
     required this.panVerified,
+    this.initialTab = "pay",
   });
 
   @override
@@ -75,9 +76,17 @@ void logout() {
 @override
 void initState() {
   super.initState();
+  if (widget.initialTab == "wallet") {
+    currentIndex = 1;
+  } else if (widget.initialTab == "card") {
+    currentIndex = 0;
+  } else {
+    currentIndex = 2; 
+  }
   _loadUnreadCount();
   _refreshStudentState();
 }
+
 
 Future<void> _refreshStudentState() async {
   try {
@@ -256,13 +265,17 @@ Future<void> _refreshStudentState() async {
 
         // ================= TAB CONTENT =================
         if (currentIndex == 1)
-          _WalletView(
-            regId: widget.regId,
-            walletStatus: walletStatus,
-            fullName: widget.fullName,
-            upiId: upiId ?? "",
-            onNewCredit: _loadUnreadCount,
-          )
+         _WalletView(
+  regId: widget.regId,
+  walletStatus: walletStatus,
+  fullName: widget.fullName,
+  upiId: upiId ?? "",
+  mobile: widget.mobile,
+  aadhaarVerified: widget.aadhaarVerified,
+  panVerified: widget.panVerified,
+  onNewCredit: _loadUnreadCount,
+)
+
         else
           _PayView(
             regId: widget.regId,
@@ -751,15 +764,23 @@ class _WalletView extends StatefulWidget {
   final String walletStatus;
   final String fullName;
   final String upiId;
+  final String mobile;
+  final int aadhaarVerified;
+  final int panVerified;
   final VoidCallback onNewCredit;
 
-  const _WalletView({
-    required this.regId,
-    required this.walletStatus,
-    required this.fullName,
-    required this.upiId,
-    required this.onNewCredit,
-  });
+
+ const _WalletView({
+  required this.regId,
+  required this.walletStatus,
+  required this.fullName,
+  required this.upiId,
+  required this.mobile,
+  required this.aadhaarVerified,
+  required this.panVerified,
+  required this.onNewCredit,
+});
+
 
 
   @override
@@ -868,12 +889,17 @@ void showReceivedAnimation(double amount) {
   Widget build(BuildContext context) {
     return Column(
   children: [
-    _WalletBalanceStrip(
-      regId: widget.regId,
-      walletStatus: widget.walletStatus,
-      fullName: widget.fullName,
-      upiId: widget.upiId,
-    ),
+   _WalletBalanceStrip(
+  regId: widget.regId,
+  walletStatus: widget.walletStatus,
+  fullName: widget.fullName,
+  upiId: widget.upiId,
+  mobile: widget.mobile,
+  aadhaarVerified: widget.aadhaarVerified,
+  panVerified: widget.panVerified,
+),
+
+
 
     const SizedBox(height: 16),
     _MyQrCard(
@@ -1043,13 +1069,21 @@ class _WalletBalanceStrip extends StatefulWidget {
   final String walletStatus;
   final String fullName;
   final String upiId;
+  final String mobile;
+  final int aadhaarVerified;
+  final int panVerified;
+
 
   const _WalletBalanceStrip({
-    required this.regId,
-    required this.walletStatus,
-    required this.fullName,
-    required this.upiId,
-  });
+  required this.regId,
+  required this.walletStatus,
+  required this.fullName,
+  required this.upiId,
+  required this.mobile,
+  required this.aadhaarVerified,
+  required this.panVerified,
+});
+
 
 
   @override
@@ -1149,11 +1183,17 @@ class _WalletBalanceStripState extends State<_WalletBalanceStrip> {
     final refreshed = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddMoneyScreen(
+   builder: (_) => AddMoneyScreen(
   regId: widget.regId,
   fullName: widget.fullName,
+  mobile: widget.mobile,
   upiId: widget.upiId,
+  walletStatus: widget.walletStatus,
+  aadhaarVerified: widget.aadhaarVerified,
+  panVerified: widget.panVerified,
 ),
+
+
 
       ),
     );

@@ -478,6 +478,44 @@ static Future<Map<String, dynamic>> verifyPin({
     "action": data["action"],
   };
 }
+// ================= PIN OTP VERIFY =================
+static Future<void> verifyPinOtp({
+  required int regId,
+  required String otp,
+}) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/login/verify-otp"),
+    headers: headers,
+    body: jsonEncode({
+      "otp": otp,
+      "reg_id": regId,
+    }),
+  );
+
+  if (res.statusCode != 200) {
+    throw Exception("INVALID_OTP");
+  }
+}
+
+// ========== Get Pin Status ============
+static Future<Map<String, bool>> getPinStatus(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/pin/status/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+    return {
+      "wallet": data["wallet_pin_set"] == true,
+      "card": data["card_pin_set"] == true,
+    };
+  }
+
+  return {
+    "wallet": false,
+    "card": false,
+  };
+}
 
 // ====== wallet to UPI =============
 static Future<void> walletToUpiPayment({
@@ -548,7 +586,7 @@ static Future<String> verifyAddMoneyOtp({
 //  =======    get saved cards ============
 static Future<List<dynamic>> getSavedCards(int regId) async {
   final res = await http.get(
-    Uri.parse("$baseUrl/cards/$regId"),
+    Uri.parse("$baseUrl/cards/saved/$regId"),
     headers: headers,
   );
 
@@ -557,6 +595,7 @@ static Future<List<dynamic>> getSavedCards(int regId) async {
   }
   return [];
 }
+
 // ========== save card ============
 static Future<bool> saveCard({
   required int regId,
@@ -589,6 +628,61 @@ static Future<void> deleteSavedCard(int cardId) async {
     headers: headers,
   );
 }
+// ======= 2nd call to add money ============
+static Future<int> initAddMoney({
+  required int regId,
+  required double amount,
+  int? savedCardId,
+}) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/wallet/add-money/init"),
+    headers: headers,
+    body: jsonEncode({
+      "reg_id": regId,
+      "amount": amount,
+      "saved_card_id": savedCardId,
+    }),
+  );
 
+  if (res.statusCode != 200) {
+    throw Exception("FAILED_TO_INIT_PAYMENT");
+  }
+
+  return jsonDecode(res.body)["txn_id"];
+}
+//  ====== 2nd call for verify and add money ========
+static Future<String> verifyAddMoney({
+  required int txnId,
+  required String otp,
+  required bool saveCard,
+  required Map<String, dynamic> cardData,
+}) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/wallet/add-money/verify"), 
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({
+      "txn_id": txnId,
+      "otp": otp,
+      "save_card": saveCard,
+      "card_data": cardData,
+    }),
+  );
+
+  if (res.statusCode != 200) {
+    return "failed";
+  }
+
+  final data = jsonDecode(res.body);
+
+  return data["status"] ?? "failed"; // "success" | "failed"
+}
+// ====== Cancel add money =======
+static Future<void> cancelAddMoney(int txnId) async {
+  await http.post(
+    Uri.parse("$baseUrl/wallet/add-money/cancel"),
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({"txn_id": txnId}),
+  );
+}
 
 }

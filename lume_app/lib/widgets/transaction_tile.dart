@@ -53,22 +53,14 @@ class TransactionTile extends StatelessWidget {
               amount: (txn["amount"] as num).toDouble(),
               status: txn["status"],
               direction: txn["direction"],
-
-              // ✅ Name priority already resolved by backend
               payeeName: txn["counterparty_name"] ?? "-",
-
-              // ✅ UPI / mobile / identifier
               payee: txn["counterparty_upi"] ?? "-",
-
-              // ✅ Wallet vs UPI
               isWallet: txn["payment_type"] == "Wallet",
-
               createdAt: txn["created_at"],
             ),
           ),
         );
       },
-
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
@@ -80,15 +72,17 @@ class TransactionTile extends StatelessWidget {
           ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(icon, color: amountColor),
             const SizedBox(width: 12),
 
-            // ================= TITLE + DATE =================
+            // ================= LEFT SIDE =================
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 🔹 TITLE
                   Text(
                     txn["title"] ?? "Transaction",
                     style: const TextStyle(
@@ -97,6 +91,8 @@ class TransactionTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
+
+                  // 🔹 DATE (EXACT FORMAT)
                   Text(
                     _formatDate(txn["created_at"]),
                     style: const TextStyle(
@@ -108,7 +104,7 @@ class TransactionTile extends StatelessWidget {
               ),
             ),
 
-            // ================= AMOUNT + STATUS =================
+            // ================= RIGHT SIDE =================
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [

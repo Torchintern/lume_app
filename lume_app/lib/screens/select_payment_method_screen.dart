@@ -5,21 +5,29 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../services/api_service.dart';
 import 'my_qr_screen.dart';
 import 'add_card_and_pay_screen.dart';
-import '../widgets/otp_bottom_sheet.dart';
+import 'wallet/card_payment_otp_screen.dart';
 import '../utils/card_utils.dart';
 
 class SelectPaymentMethodScreen extends StatefulWidget {
   final int regId;
   final double amount;
   final String fullName;
+  final String mobile;
   final String upiId;
+  final String walletStatus;
+  final int aadhaarVerified;
+  final int panVerified;
 
   const SelectPaymentMethodScreen({
     super.key,
     required this.regId,
     required this.amount,
     required this.fullName,
+    required this.mobile,
     required this.upiId,
+    required this.walletStatus,
+    required this.aadhaarVerified,
+    required this.panVerified,
   });
 
   @override
@@ -48,29 +56,22 @@ class _SelectPaymentMethodScreenState
 
     if (!mounted || txnId == null) return;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => OTPBottomSheet(
-        onVerify: (otp) async {
-          final result = await ApiService.verifyAddMoneyOtp(
-            txnId: txnId,
-            otp: otp,
-            saveCard: false,
-          );
-
-          Navigator.pop(context);
-
-          if (result == "success") {
-            Navigator.pop(context, true);
-          } else {
-            _showResultDialog(
-              success: false,
-              message: "OTP verification failed",
-            );
-          }
-        },
+    // 🔥 OTP SCREEN HANDLES RESULT + DASHBOARD REDIRECT
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CardPaymentOtpScreen(
+          txnId: txnId,
+          saveCard: false,
+          cardData: const {},
+          regId: widget.regId,
+          fullName: widget.fullName,
+          mobile: widget.mobile,
+          upiId: widget.upiId,
+          walletStatus: widget.walletStatus,
+          aadhaarVerified: widget.aadhaarVerified,
+          panVerified: widget.panVerified,
+        ),
       ),
     );
   }
@@ -88,7 +89,6 @@ class _SelectPaymentMethodScreenState
   void _confirmDeleteCard(int cardId) {
     showDialog(
       context: context,
-      barrierDismissible: true,
       builder: (_) => Dialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
@@ -123,11 +123,6 @@ class _SelectPaymentMethodScreenState
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                      ),
                       onPressed: () => Navigator.pop(context),
                       child: const Text("Cancel"),
                     ),
@@ -137,9 +132,6 @@ class _SelectPaymentMethodScreenState
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
                       ),
                       onPressed: () async {
                         Navigator.pop(context);
@@ -161,14 +153,13 @@ class _SelectPaymentMethodScreenState
     );
   }
 
-  // ================= CONSISTENT RESULT DIALOG =================
+  // ================= RESULT DIALOG =================
   void _showResultDialog({
     required bool success,
     required String message,
   }) {
     showDialog(
       context: context,
-      barrierDismissible: true,
       builder: (_) => Dialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
@@ -197,20 +188,8 @@ class _SelectPaymentMethodScreenState
                 width: double.infinity,
                 height: 46,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4C6EF5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                  ),
                   onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                    "OK",
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: const Text("OK"),
                 ),
               ),
             ],
@@ -264,10 +243,9 @@ class _SelectPaymentMethodScreenState
               ),
 
               const SizedBox(height: 12),
-
               _upiTile(),
-
               const SizedBox(height: 24),
+
               const Text(
                 "Add payment method",
                 style: TextStyle(color: Colors.grey),
@@ -277,23 +255,22 @@ class _SelectPaymentMethodScreenState
               _simpleTile(
                 icon: Icons.credit_card,
                 title: "Add debit or credit card",
-                onTap: () async {
-                  final refreshed = await Navigator.push(
+                onTap: () {
+                  Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => AddCardAndPayScreen(
                         regId: widget.regId,
                         amount: widget.amount,
+                        fullName: widget.fullName,
+                        mobile: widget.mobile,
+                        upiId: widget.upiId,
+                        walletStatus: widget.walletStatus,
+                        aadhaarVerified: widget.aadhaarVerified,
+                        panVerified: widget.panVerified,
                       ),
                     ),
                   );
-
-                  if (refreshed == true) {
-                    setState(() {
-                      _savedCardsFuture =
-                          ApiService.getSavedCards(widget.regId);
-                    });
-                  }
                 },
               ),
 
@@ -309,44 +286,39 @@ class _SelectPaymentMethodScreenState
 
                   return Column(
                     children: snapshot.data!.map((c) {
-                      final brandName =
-                          c["card_brand"] ?? c["brand"] ?? "unknown";
-                      final typeName =
-                          c["card_type"] ?? "debit";
-
                       final brand = CardBrand.values.firstWhere(
-                        (e) => e.name == brandName,
+                        (e) => e.name == c["card_brand"],
                         orElse: () => CardBrand.unknown,
                       );
 
                       final cardType = CardType.values.firstWhere(
-                        (e) => e.name == typeName,
+                        (e) => e.name == c["card_type"],
                         orElse: () => CardType.debit,
                       );
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: const [
-                              BoxShadow(
-                                  color: Colors.black12, blurRadius: 8),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              SvgPicture.asset(
-                                cardBrandSvg(brand),
-                                width: 36,
-                                height: 36,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () => _payWithSavedCard(c),
+                        child: GestureDetector(
+                          onTap: () => _payWithSavedCard(c),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: const [
+                                BoxShadow(
+                                    color: Colors.black12, blurRadius: 8),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                SvgPicture.asset(
+                                  cardBrandSvg(brand),
+                                  width: 36,
+                                  height: 36,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
                                   child: Text(
                                     "${cardTypeLabel(cardType)} • **** ${c["last4"]}",
                                     style: const TextStyle(
@@ -355,14 +327,14 @@ class _SelectPaymentMethodScreenState
                                     ),
                                   ),
                                 ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete,
-                                    color: Colors.red),
-                                onPressed: () =>
-                                    _confirmDeleteCard(c["id"]),
-                              ),
-                            ],
+                                IconButton(
+                                  icon: const Icon(Icons.delete,
+                                      color: Colors.red),
+                                  onPressed: () =>
+                                      _confirmDeleteCard(c["id"]),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       );
