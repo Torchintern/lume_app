@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/otp_bottom_sheet.dart';
 import '../widgets/primary_button.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PinSettingsScreen extends StatefulWidget {
   final int regId;
+  final bool forceSetup;
 
   const PinSettingsScreen({
     super.key,
     required this.regId,
+    this.forceSetup = false,
   });
 
   @override
@@ -41,8 +44,8 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
       if (!mounted) return;
 
       setState(() {
-        walletHasPin = status["wallet"] ?? false;
-        cardHasPin = status["card"] ?? false;
+        walletHasPin = status["wallet"] == true;
+        cardHasPin = status["card"] == true;
         loading = false;
       });
     } catch (_) {
@@ -55,8 +58,11 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
     }
   }
 
-  // ================= OTP BOTTOM SHEET =================
-  void _openOtpSheet(bool isWallet) {
+  // ================= OTP FLOW =================
+  Future<void> _openOtpSheet(bool isWallet) async {
+    await ApiService.sendPinResetOtp(regId: widget.regId);
+    if (!mounted) return;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -67,7 +73,9 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
         return OTPBottomSheet(
           otpSentMessage: "OTP sent to your registered mobile number",
           onVerify: (otp) async {
-            // OTPBottomSheet handles validation UI
+            await ApiService.verifyPinResetOtp(otp: otp);
+            if (!mounted) return;
+
             setState(() {
               if (isWallet) {
                 walletOtpVerified = true;
@@ -91,74 +99,77 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
 
     if (!mounted) return;
 
-    if (success) {
-      setState(() {
-        if (isWallet) {
-          walletHasPin = true;
-          walletOtpVerified = false;
-        } else {
-          cardHasPin = true;
-          cardOtpVerified = false;
-        }
-      });
-
-      _showSuccessDialog();
-    } else {
-      _showErrorDialog("Failed to set PIN. Please try again.");
+    if (!success) {
+      _showResultDialog(
+        success: false,
+        message: "Unable to update PIN. Please try again.",
+      );
+      return;
     }
+
+    if (isWallet) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool("wallet_pin_set", true);
+    }
+
+    setState(() {
+      if (isWallet) {
+        walletHasPin = true;
+        walletOtpVerified = false;
+      } else {
+        cardHasPin = true;
+        cardOtpVerified = false;
+      }
+    });
+
+    _showResultDialog(
+      success: true,
+      message: "Your PIN has been updated successfully.",
+    );
   }
 
-  // ================= SUCCESS DIALOG =================
-  void _showSuccessDialog() {
+  // ================= RESULT DIALOG =================
+  void _showResultDialog({
+    required bool success,
+    required String message,
+  }) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.check_circle, color: Colors.green, size: 56),
-            SizedBox(height: 16),
+          children: [
+            Icon(
+              success ? Icons.check_circle : Icons.error_outline,
+              color: success ? Colors.green : Colors.red,
+              size: 56,
+            ),
+            const SizedBox(height: 16),
             Text(
-              "PIN set successfully",
-              style: TextStyle(
-                fontSize: 16,
+              success ? "PIN Updated" : "Action Failed",
+              style: const TextStyle(
+                fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-
-              // 🔄 Refresh PIN status
-              await _loadPinStatus();
-
-              // 🔁 Clear navigation stack → go back to dashboard
-              if (mounted) {
-                Navigator.of(context)
-                    .popUntil((route) => route.isFirst);
-              }
+            onPressed: () {
+              Navigator.pop(context); // close dialog
+              Navigator.pop(context, true); // return to dashboard
             },
-            child: const Text("OK"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text("Error"),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
             child: const Text("OK"),
           ),
         ],
@@ -175,34 +186,40 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
       );
     }
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text("Set PIN"),
-        bottom: TabBar(
+    return WillPopScope(
+      onWillPop: () async => !widget.forceSetup,
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          automaticallyImplyLeading: !widget.forceSetup,
+          title: Text(
+            widget.forceSetup ? "Set PIN" : "PIN Settings",
+          ),
+          bottom: TabBar(
+            controller: _tabController,
+            tabs: const [
+              Tab(text: "Wallet"),
+              Tab(text: "Card"),
+            ],
+          ),
+        ),
+        body: TabBarView(
           controller: _tabController,
-          tabs: const [
-            Tab(text: "Wallet"),
-            Tab(text: "Card"),
+          children: [
+            _PinFlow(
+              hasPin: walletHasPin,
+              otpVerified: walletOtpVerified,
+              onForgotPin: () => _openOtpSheet(true),
+              onSave: (pin) => _savePin(true, pin),
+            ),
+            _PinFlow(
+              hasPin: cardHasPin,
+              otpVerified: cardOtpVerified,
+              onForgotPin: () => _openOtpSheet(false),
+              onSave: (pin) => _savePin(false, pin),
+            ),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _PinFlow(
-            hasPin: walletHasPin,
-            otpVerified: walletOtpVerified,
-            onForgotPin: () => _openOtpSheet(true),
-            onSave: (pin) => _savePin(true, pin),
-          ),
-          _PinFlow(
-            hasPin: cardHasPin,
-            otpVerified: cardOtpVerified,
-            onForgotPin: () => _openOtpSheet(false),
-            onSave: (pin) => _savePin(false, pin),
-          ),
-        ],
       ),
     );
   }
@@ -259,29 +276,7 @@ class _PinFlowState extends State<_PinFlow> {
 
           const SizedBox(height: 24),
 
-          _keypad(
-            onKey: (v) {
-              if (!canEnterPin) return;
-
-              setState(() {
-                if (!confirmStep && pin.length < 4) {
-                  pin += v;
-                } else if (confirmStep && confirmPin.length < 4) {
-                  confirmPin += v;
-                }
-              });
-            },
-            onDelete: () {
-              setState(() {
-                if (confirmStep && confirmPin.isNotEmpty) {
-                  confirmPin =
-                      confirmPin.substring(0, confirmPin.length - 1);
-                } else if (!confirmStep && pin.isNotEmpty) {
-                  pin = pin.substring(0, pin.length - 1);
-                }
-              });
-            },
-          ),
+          _keypad(),
 
           const SizedBox(height: 24),
 
@@ -297,11 +292,14 @@ class _PinFlowState extends State<_PinFlow> {
               if (pin != confirmPin) {
                 showDialog(
                   context: context,
-                  barrierDismissible: false,
                   builder: (_) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     title: const Text("PIN Mismatch"),
-                    content:
-                        const Text("Entered PINs do not match."),
+                    content: const Text(
+                      "The PINs you entered do not match. Please try again.",
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
@@ -333,19 +331,14 @@ class _PinFlowState extends State<_PinFlow> {
           height: 12,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: i < filled
-                ? Colors.blue
-                : Colors.grey.shade300,
+            color: i < filled ? Colors.blue : Colors.grey.shade300,
           ),
         ),
       ),
     );
   }
 
-  Widget _keypad({
-    required Function(String) onKey,
-    required VoidCallback onDelete,
-  }) {
+  Widget _keypad() {
     const keys = [
       ["1", "2", "3"],
       ["4", "5", "6"],
@@ -363,7 +356,26 @@ class _PinFlowState extends State<_PinFlow> {
             return Padding(
               padding: const EdgeInsets.all(8),
               child: InkWell(
-                onTap: k == "⌫" ? onDelete : () => onKey(k),
+                onTap: () {
+                  if (!canEnterPin) return;
+
+                  setState(() {
+                    if (k == "⌫") {
+                      if (confirmStep && confirmPin.isNotEmpty) {
+                        confirmPin =
+                            confirmPin.substring(0, confirmPin.length - 1);
+                      } else if (!confirmStep && pin.isNotEmpty) {
+                        pin = pin.substring(0, pin.length - 1);
+                      }
+                    } else {
+                      if (!confirmStep && pin.length < 4) {
+                        pin += k;
+                      } else if (confirmStep && confirmPin.length < 4) {
+                        confirmPin += k;
+                      }
+                    }
+                  });
+                },
                 child: Container(
                   width: 64,
                   height: 64,

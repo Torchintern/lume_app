@@ -10,7 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
+  
   cupertino_icons: ^1.0.8
 
   # ================= API =================
@@ -19,13 +19,13 @@ dependencies:
   # ================= UI / FONTS =================
   google_fonts: ^6.1.0
   lottie: ^3.1.0
-  flutter_svg: ^2.0.9   # ✅ ADDED for card brand SVGs
+  flutter_svg: ^2.0.9   # ADDED for card brand SVGs
 
   # ================= QR & SCANNING =================
   mobile_scanner: ^3.5.6        # Tap & Pay QR scanner
   image_picker: ^1.0.7          # Scan QR from gallery
   qr_flutter: ^4.1.0            # Generate My QR
-
+  local_auth: ^2.2.0            # Device Biometric support
   # ================= SHARING =================
   share_plus: ^7.2.1
   shared_preferences: ^2.2.2

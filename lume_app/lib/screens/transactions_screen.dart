@@ -422,7 +422,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       height: 48,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue, // ✅ UI MATCH
+          backgroundColor: Colors.blue,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24)),
         ),

@@ -6,6 +6,8 @@ import 'dart:ui' as ui;
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 
 class MyQrScreen extends StatefulWidget {
   final String name;
@@ -26,7 +28,7 @@ class MyQrScreen extends StatefulWidget {
 class _MyQrScreenState extends State<MyQrScreen> {
   final GlobalKey qrKey = GlobalKey();
   final TextEditingController amountCtrl = TextEditingController();
-
+  File? profileImage;
   bool amountQrGenerated = false;
   String generatedAmount = "";
 
@@ -34,6 +36,7 @@ class _MyQrScreenState extends State<MyQrScreen> {
   void initState() {
     super.initState();
     _resetQrState();
+    _loadProfileImage();
   }
 
   void _resetQrState() {
@@ -41,6 +44,21 @@ class _MyQrScreenState extends State<MyQrScreen> {
     generatedAmount = "";
     amountCtrl.clear();
   }
+
+  Future<void> _loadProfileImage() async {
+  final prefs = await SharedPreferences.getInstance();
+  final path = prefs.getString("profile_image_path");
+
+  if (path != null) {
+    final file = File(path);
+    if (await file.exists()) {
+      setState(() {
+        profileImage = file;
+      });
+    }
+  }
+}
+
 
   // ================= USER INITIALS =================
   String get initials {
@@ -278,17 +296,22 @@ class _MyQrScreenState extends State<MyQrScreen> {
                             ),
                           ),
                           CircleAvatar(
-                            radius: 28,
-                            backgroundColor: const Color(0xFFE8ECFF),
-                            child: Text(
-                              initials,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                                color: Color(0xFF4C6EF5),
-                              ),
+                              radius: 28,
+                              backgroundColor: const Color(0xFFE8ECFF),
+                              backgroundImage: profileImage != null
+                                  ? FileImage(profileImage!)
+                                  : null,
+                              child: profileImage == null
+                                  ? Text(
+                                      initials,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                        color: Color(0xFF4C6EF5),
+                                      ),
+                                    )
+                                  : null,
                             ),
-                          ),
                         ],
                       ),
 

@@ -478,17 +478,31 @@ static Future<Map<String, dynamic>> verifyPin({
     "action": data["action"],
   };
 }
-// ================= PIN OTP VERIFY =================
-static Future<void> verifyPinOtp({
+// ================= PIN RESET – SEND OTP =================
+static Future<void> sendPinResetOtp({
   required int regId,
+}) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/pin/send-otp"),
+    headers: headers,
+    body: jsonEncode({
+      "reg_id": regId,
+    }),
+  );
+
+  if (res.statusCode != 200) {
+    throw Exception("FAILED_TO_SEND_PIN_OTP");
+  }
+}
+// ================= PIN RESET – VERIFY OTP =================
+static Future<void> verifyPinResetOtp({
   required String otp,
 }) async {
   final res = await http.post(
-    Uri.parse("$baseUrl/login/verify-otp"),
+    Uri.parse("$baseUrl/pin/verify-otp"),
     headers: headers,
     body: jsonEncode({
       "otp": otp,
-      "reg_id": regId,
     }),
   );
 
@@ -496,6 +510,7 @@ static Future<void> verifyPinOtp({
     throw Exception("INVALID_OTP");
   }
 }
+
 
 // ========== Get Pin Status ============
 static Future<Map<String, bool>> getPinStatus(int regId) async {

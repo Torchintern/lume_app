@@ -4,6 +4,7 @@ import '../widgets/otp_bottom_sheet.dart';
 import '../widgets/primary_button.dart';
 import 'register_screen.dart';
 import 'dashboard_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -137,6 +138,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                   controller.text,
                                   otp,
                                 );
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                await prefs.setString(
+                                  "user_name",
+                                  res["full_name"] ?? "",
+                                );
 
                                 final dynamic rawRegId = res["reg_id"];
                                 if (rawRegId == null) {
@@ -171,8 +178,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 }
 
                                 if (!mounted) return;
-
-                                // ✅ SAFE NAVIGATION (NO CRASH)
                                 Navigator.of(context).pushAndRemoveUntil(
                                   MaterialPageRoute(
                                     builder: (_) => DashboardScreen(

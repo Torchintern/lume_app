@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'pin_verify_screen.dart';
 import 'payment_result_screen.dart';
+import 'pin_settings_screen.dart';
 
 class PaymentAmountScreen extends StatefulWidget {
   final int regId;
@@ -18,10 +19,12 @@ class PaymentAmountScreen extends StatefulWidget {
   });
 
   @override
-  State<PaymentAmountScreen> createState() => _PaymentAmountScreenState();
+  State<PaymentAmountScreen> createState() =>
+      _PaymentAmountScreenState();
 }
 
-class _PaymentAmountScreenState extends State<PaymentAmountScreen> {
+class _PaymentAmountScreenState
+    extends State<PaymentAmountScreen> {
   String amountText = "";
   double balance = 0.0;
   bool loadingBalance = true;
@@ -36,7 +39,8 @@ class _PaymentAmountScreenState extends State<PaymentAmountScreen> {
   // ================= LOAD BALANCE =================
   Future<void> _loadBalance() async {
     try {
-      final b = await ApiService.getWalletBalance(widget.regId);
+      final b =
+          await ApiService.getWalletBalance(widget.regId);
       if (!mounted) return;
       setState(() {
         balance = b;
@@ -68,16 +72,31 @@ class _PaymentAmountScreenState extends State<PaymentAmountScreen> {
       });
     }
   }
-bool get canPay =>
-    amount > 0 &&
-    !paying &&
-    !loadingBalance &&
-    amount <= balance &&
-    widget.payee.isNotEmpty &&
-    (widget.payee.contains("@") || widget.payee.length == 10);
 
+  bool get canPay =>
+      amount > 0 &&
+      !paying &&
+      !loadingBalance &&
+      amount <= balance &&
+      widget.payee.isNotEmpty &&
+      (widget.payee.contains("@") ||
+          widget.payee.length == 10);
 
-  // ================= PAY FLOW =================
+  // ================= PAY BUTTON ENTRY =================
+  Future<void> _onPayPressed() async {
+    final status =
+        await ApiService.getPinStatus(widget.regId);
+    final bool walletPinSet = status["wallet"] == true;
+
+    if (!walletPinSet) {
+      _showWalletPinRequiredDialog();
+      return;
+    }
+
+    _startPaymentFlow();
+  }
+
+  // ================= PIN VERIFY =================
   Future<void> _startPaymentFlow() async {
     await Navigator.push(
       context,
@@ -91,60 +110,100 @@ bool get canPay =>
     );
   }
 
-Future<void> _executePayment() async {
-  if (!canPay) return;
+  // ================= EXECUTE PAYMENT =================
+  Future<void> _executePayment() async {
+    if (!canPay) return;
 
-  setState(() => paying = true);
+    setState(() => paying = true);
 
-  String status = "failed";
+    String status = "failed";
 
-  try {
-    final bool isUpiPayment = widget.payee.contains("@");
-    bool ok = false;
+    try {
+      final bool isUpiPayment =
+          widget.payee.contains("@");
+      bool ok = false;
 
-    if (isUpiPayment) {
-      //  WALLET → UPI
-      ok = await ApiService.payViaUpi(
-        widget.regId,
-        widget.payee,
-        amount,
-      );
-    } else {
-      // WALLET → WALLET
-      ok = await ApiService.walletToWalletTransfer(
-        senderRegId: widget.regId,
-        receiverMobile: widget.payee,
-        amount: amount,
-      );
+      if (isUpiPayment) {
+        ok = await ApiService.payViaUpi(
+          widget.regId,
+          widget.payee,
+          amount,
+        );
+      } else {
+        ok = await ApiService.walletToWalletTransfer(
+          senderRegId: widget.regId,
+          receiverMobile: widget.payee,
+          amount: amount,
+        );
+      }
+
+      status = ok ? "success" : "failed";
+    } catch (_) {
+      status = "failed";
     }
 
-    status = ok ? "success" : "failed";
-  } catch (_) {
-    status = "failed";
+    if (!mounted) return;
+
+    setState(() => paying = false);
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentResultScreen(
+          amount: amount,
+          status: status,
+          direction: "debit",
+          payeeName: widget.payeeName.isNotEmpty
+              ? widget.payeeName
+              : widget.payee,
+          payee: widget.payee,
+          isWallet: !widget.payee.contains("@"),
+        ),
+      ),
+    );
   }
 
-  if (!mounted) return;
+  // ================= WALLET PIN REQUIRED DIALOG =================
+  void _showWalletPinRequiredDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text(
+          "Wallet PIN not set",
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        content: const Text(
+          "Please set your Wallet PIN to continue payments.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
 
-  setState(() => paying = false);
-
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(
-      builder: (_) => PaymentResultScreen(
-        amount: amount,
-        status: status,
-        direction: "debit",
-        payeeName: widget.payeeName.isNotEmpty
-            ? widget.payeeName
-            : widget.payee,
-        payee: widget.payee,
-        isWallet: !widget.payee.contains("@"),
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PinSettingsScreen(
+                    regId: widget.regId,
+                    forceSetup: true,
+                  ),
+                ),
+              );
+            },
+            child: const Text("Go to Wallet PIN"),
+          ),
+        ],
       ),
-    ),
-  );
-}
-
-
+    );
+  }
 
   // ================= UI =================
   @override
@@ -154,7 +213,6 @@ Future<void> _executePayment() async {
       body: SafeArea(
         child: Column(
           children: [
-            // ================= CLOSE =================
             Align(
               alignment: Alignment.centerLeft,
               child: IconButton(
@@ -165,7 +223,6 @@ Future<void> _executePayment() async {
 
             const SizedBox(height: 12),
 
-            // ================= AMOUNT =================
             Text(
               "₹${amountText.isEmpty ? "0" : amountText}",
               style: const TextStyle(
@@ -176,7 +233,6 @@ Future<void> _executePayment() async {
 
             const SizedBox(height: 10),
 
-            // ================= TO =================
             Column(
               children: [
                 Text(
@@ -203,9 +259,8 @@ Future<void> _executePayment() async {
                     style: TextStyle(
                       fontSize: 12,
                       color: widget.payee.contains("@")
-    ? Colors.blue
-    : Colors.green,
-
+                          ? Colors.blue
+                          : Colors.green,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -213,60 +268,8 @@ Future<void> _executePayment() async {
               ],
             ),
 
-            const SizedBox(height: 14),
-
-            // ================= NOTE =================
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Text(
-                "Add a note",
-                style: TextStyle(color: Colors.grey),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ================= FROM ACCOUNT =================
-            Container(
-              margin:
-                  const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(
-                      color: Colors.black12, blurRadius: 6),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment:
-                    MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    "From LUME Account",
-                    style:
-                        TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  Text(
-                    loadingBalance
-                        ? "Loading..."
-                        : "Balance: ₹${balance.toStringAsFixed(2)}",
-                    style:
-                        const TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-
             const Spacer(),
 
-            // ================= KEYPAD =================
             _Keypad(
               onDigit: _addDigit,
               onBackspace: _removeDigit,
@@ -274,15 +277,13 @@ Future<void> _executePayment() async {
 
             const SizedBox(height: 10),
 
-            // ================= PAY BUTTON =================
             Padding(
               padding: const EdgeInsets.all(16),
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed:
-                      canPay ? _startPaymentFlow : null,
+                  onPressed: canPay ? _onPayPressed : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: canPay
                         ? const Color(0xFF4C6EF5)

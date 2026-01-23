@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import 'pin_settings_screen.dart';
 
@@ -7,11 +9,15 @@ class PinVerifyScreen extends StatefulWidget {
   final String type; // wallet | card
   final VoidCallback onVerified;
 
+  /// Amount is REQUIRED to enforce ₹10,000 biometric limit
+  final double? amount;
+
   const PinVerifyScreen({
     super.key,
     required this.regId,
     required this.type,
     required this.onVerified,
+    this.amount,
   });
 
   @override
@@ -21,13 +27,48 @@ class PinVerifyScreen extends StatefulWidget {
 class _PinVerifyScreenState extends State<PinVerifyScreen> {
   static const int pinLength = 4;
 
+  final LocalAuthentication _auth = LocalAuthentication();
+
   String enteredPin = "";
   String? error;
   bool locked = false;
   bool verifying = false;
 
-  // ================= PIN INPUT =================
+  bool showBiometric = false;
 
+  // ================= INIT =================
+  @override
+  void initState() {
+    super.initState();
+    _loadBiometricPreference();
+  }
+
+  Future<void> _loadBiometricPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final biometricEnabled =
+        prefs.getBool("biometric_payment") ?? false;
+
+    bool supported = false;
+    try {
+      supported = await _auth.canCheckBiometrics &&
+          await _auth.isDeviceSupported();
+    } catch (_) {
+      supported = false;
+    }
+
+    /// ₹10,000 LIMIT ENFORCED HERE
+    final bool withinLimit =
+        widget.amount == null || widget.amount! <= 10000;
+
+    if (!mounted) return;
+
+    setState(() {
+      showBiometric =
+          biometricEnabled && supported && withinLimit;
+    });
+  }
+
+  // ================= PIN INPUT =================
   void _onKeyTap(String value) {
     if (locked || verifying) return;
     if (enteredPin.length >= pinLength) return;
@@ -52,15 +93,9 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
     });
   }
 
-  // ================= VERIFY =================
-
+  // ================= VERIFY PIN =================
   Future<void> _verify() async {
-    if (enteredPin.length != pinLength) {
-      setState(() {
-        error = "Enter 4-digit PIN";
-      });
-      return;
-    }
+    if (enteredPin.length != pinLength) return;
 
     setState(() {
       verifying = true;
@@ -73,37 +108,75 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
       pin: enteredPin,
     );
 
+    if (!mounted) return;
+
     setState(() {
       verifying = false;
     });
 
-    if (res["statusCode"] == 200) {
+    if (res["message"] == "PIN_VERIFIED") {
       widget.onVerified();
       Navigator.pop(context);
       return;
     }
 
-    if (res["locked"] == true ||
-        res["message"] == "WALLET_PIN_LOCKED" ||
+    if (res["message"] == "WALLET_PIN_LOCKED" ||
         res["message"] == "CARD_PIN_LOCKED") {
       setState(() {
         locked = true;
         error = "PIN locked. Reset required.";
       });
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PinSettingsScreen(
+            regId: widget.regId,
+            forceSetup: true,
+          ),
+        ),
+      );
       return;
     }
 
     if (res["message"] == "INVALID_PIN") {
       setState(() {
         enteredPin = "";
-        error =
-            "Wrong PIN. Attempts left: ${res["attemptsLeft"]}";
+        final attemptsLeft = res["attempts_left"] ?? 0;
+        error = "Wrong PIN. Attempts left: $attemptsLeft";
       });
+      return;
+    }
+
+    setState(() {
+      enteredPin = "";
+      error = "PIN verification failed. Try again.";
+    });
+  }
+
+  // ================= BIOMETRIC VERIFY =================
+  Future<void> _verifyWithBiometric() async {
+    if (!showBiometric || verifying || locked) return;
+
+    try {
+      final success = await _auth.authenticate(
+        localizedReason: "Authenticate to continue",
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
+      );
+
+      if (success && mounted) {
+        widget.onVerified();
+        Navigator.pop(context);
+      }
+    } catch (_) {
+      // silent fail → PIN fallback
     }
   }
 
   // ================= UI =================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -118,7 +191,6 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
           children: [
             const SizedBox(height: 24),
 
-            // ===== TITLE =====
             const Text(
               "Enter PIN",
               style: TextStyle(
@@ -152,7 +224,8 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
             // ===== ERROR =====
             if (error != null)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24),
                 child: Text(
                   error!,
                   textAlign: TextAlign.center,
@@ -168,19 +241,16 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
             // ===== FORGOT PIN =====
             if (!locked)
               GestureDetector(
-                onTap: () async {
-                  await Navigator.pushReplacement(
+                onTap: () {
+                  Navigator.pushReplacement(
                     context,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          PinSettingsScreen(regId: widget.regId),
+                      builder: (_) => PinSettingsScreen(
+                        regId: widget.regId,
+                        forceSetup: true,
+                      ),
                     ),
                   );
-
-                  if (mounted) {
-                    Navigator.of(context)
-                        .popUntil((route) => route.isFirst);
-                  }
                 },
                 child: const Text(
                   "Forgot PIN",
@@ -194,33 +264,6 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
 
             const Spacer(),
 
-            // ===== RESET PIN (LOCKED) =====
-            if (locked)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      await Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              PinSettingsScreen(regId: widget.regId),
-                        ),
-                      );
-
-                      if (mounted) {
-                        Navigator.of(context)
-                            .popUntil((route) => route.isFirst);
-                      }
-                    },
-                    child: const Text("Reset PIN"),
-                  ),
-                ),
-              ),
-
             if (!locked) _buildKeypad(),
 
             const SizedBox(height: 24),
@@ -231,7 +274,6 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
   }
 
   // ================= KEYPAD =================
-
   Widget _buildKeypad() {
     return Column(
       children: [
@@ -241,9 +283,14 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(width: 80),
+            showBiometric
+                ? _iconButton(
+                    Icons.fingerprint, _verifyWithBiometric)
+                : const SizedBox(width: 88),
+
             _keyButton("0"),
-            _iconButton(Icons.backspace_outlined, _onDelete),
+            _iconButton(
+                Icons.backspace_outlined, _onDelete),
           ],
         ),
       ],

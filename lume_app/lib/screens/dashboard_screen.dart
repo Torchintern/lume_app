@@ -11,6 +11,12 @@ import 'my_qr_screen.dart';
 import 'transactions_screen.dart';
 import 'package:lume_app/widgets/transaction_tile.dart';
 import 'pin_settings_screen.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'upi_payment_settings_screen.dart';
+import 'pin_verify_screen.dart';
+
 class DashboardScreen extends StatefulWidget {
   final int regId;
   final String fullName;
@@ -44,6 +50,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double kycProgress = 0.0;
   bool isKycCompleted = false;
   String? upiId;
+  String? userName;
+  File? profileImage;
+  String? profileImageUrl;
+
 
   // ================= USER HELPERS =================
   String get initials {
@@ -61,16 +71,101 @@ void logout() {
 }
 
 
-  
+  Future<void> _loadProfileData() async {
+  final prefs = await SharedPreferences.getInstance();
+  setState(() {
+    userName = prefs.getString("user_name") ?? widget.fullName;
+    final imagePath = prefs.getString("profile_image_path");
+    if (imagePath != null) {
+      profileImage = File(imagePath);
+    }
+  });
+}
+Future<void> _pickImage(ImageSource source) async {
+  final picker = ImagePicker();
 
-  Future<void> _loadUnreadCount() async {
+  final picked = await picker.pickImage(
+    source: source,
+    imageQuality: 80,
+  );
+
+  if (picked != null) {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("profile_image_path", picked.path);
+
+    setState(() {
+      profileImage = File(picked.path);
+    });
+  }
+}
+
+Future<void> _pickProfileImage() async {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+
+          // Drag handle
+          Container(
+            height: 4,
+            width: 40,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade400,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          const Text(
+            "Change Profile Picture",
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          ListTile(
+            leading: const Icon(Icons.camera_alt, color: Color(0xFF4C6EF5)),
+            title: const Text("Take photo"),
+            onTap: () {
+              Navigator.pop(context);
+              _pickImage(ImageSource.camera);
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.photo_library, color: Color(0xFF4C6EF5)),
+            title: const Text("Choose from gallery"),
+            onTap: () {
+              Navigator.pop(context);
+              _pickImage(ImageSource.gallery);
+            },
+          ),
+
+          const SizedBox(height: 12),
+        ],
+      ),
+    ),
+  );
+}
+
+
+Future<void> _loadUnreadCount() async {
   try {
     unreadCount =
         await ApiService.getUnreadNotificationCount(widget.regId);
     if (!mounted) return;
     setState(() {});
   } catch (_) {
-    // fail silently
   }
 }
 @override
@@ -85,36 +180,63 @@ void initState() {
   }
   _loadUnreadCount();
   _refreshStudentState();
+  _loadProfileData();
+}
+// Pin status check
+Future<void> openWalletPinFlow() async {
+  final status = await ApiService.getPinStatus(widget.regId);
+  final bool walletPinSet = status["wallet"] == true;
+
+  if (!walletPinSet) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PinSettingsScreen(
+          regId: widget.regId,
+          forceSetup: true,
+        ),
+      ),
+    );
+    return;
+  }
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PinVerifyScreen(
+        regId: widget.regId,
+        type: "wallet",
+        onVerified: () {},
+      ),
+    ),
+  );
 }
 
 
+// Refresh student state
 Future<void> _refreshStudentState() async {
   try {
-    final data =
-        await ApiService.getStudentDetails(widget.regId);
-
+    final data = await ApiService.getStudentDetails(widget.regId);
     if (!mounted) return;
 
     setState(() {
-  aadhaarVerified = data["aadhaar_verified"] == 1;
-  panVerified = data["pan_verified"] == 1;
+      aadhaarVerified = data["aadhaar_verified"] == 1;
+      panVerified = data["pan_verified"] == 1;
 
-  walletStatus = data["wallet_status"] ?? "inactive";
-  upiId = data["upi_id"];
+      walletStatus = data["wallet_status"] ?? "inactive";
+      upiId = data["upi_id"];
 
-  final percent =
-      (data["kyc_completion_percent"] ?? 0).toDouble();
-  kycProgress = percent / 100;
-  isKycCompleted = kycProgress == 1.0;
-
-  currentIndex = currentIndex;
-});
-
-
+      final percent =
+          (data["kyc_completion_percent"] ?? 0).toDouble();
+      kycProgress = percent / 100;
+      isKycCompleted = kycProgress == 1.0;
+    });
   } catch (_) {
     // silent fail
   }
 }
+
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -131,22 +253,72 @@ Future<void> _refreshStudentState() async {
           child: Column(
             children: [
               const SizedBox(height: 20),
-              CircleAvatar(
-                radius: 36,
-                backgroundColor: const Color(0xFFE8ECFF),
-                child: Text(
-                  initials,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF4C6EF5),
+              Stack(
+                alignment: Alignment.bottomRight,
+                children: [
+                  GestureDetector(
+                    onTap: _pickProfileImage,
+                    child: CircleAvatar(
+                          radius: 22,
+                          backgroundColor: const Color(0xFFE8ECFF),
+                          backgroundImage: profileImage != null
+                              ? FileImage(profileImage!)
+                              : null,
+                          child: profileImage == null
+                              ? Text(
+                                  initials,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF4C6EF5),
+                                  ),
+                                )
+                              : null,
+                        ),
                   ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: GestureDetector(
+                      onTap: _pickProfileImage,
+                      child: Container(
+                        height: 22,
+                        width: 22,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          size: 14,
+                          color: Color(0xFF4C6EF5),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                userName ?? widget.fullName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(widget.mobile),
               const SizedBox(height: 4),
-              Text(upiId ?? "No UPI ID",
+              Text(
+                widget.mobile,
+                style: const TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                upiId ?? "No UPI ID",
                 style: const TextStyle(color: Colors.grey),
               ),
               const Divider(height: 40),
@@ -154,22 +326,35 @@ Future<void> _refreshStudentState() async {
                 leading: const Icon(Icons.person_outline),
                 title: const Text("My Details"),
                 onTap: () async {
-  Navigator.of(context).pop();
+                    Navigator.of(context).pop();
 
-  final updated = await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => StudentDetailsScreen(regId: widget.regId),
-    ),
-  );
+                    final updated = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StudentDetailsScreen(regId: widget.regId),
+                      ),
+                    );
 
-  if (updated == true) {
-    _refreshStudentState();
-  }
-},
-
-
-
+                    if (updated == true) {
+                      _refreshStudentState();
+                    }
+                  },
+              ),
+              ListTile(
+                leading: const Icon(Icons.payments_outlined),
+                title: const Text("UPI & Payment Settings"),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => UpiPaymentSettingsScreen(
+                        upiId: upiId ?? "",
+                        mobile: widget.mobile,
+                      ),
+                    ),
+                  );
+                },
               ),
               const Spacer(),
               ListTile(
@@ -918,17 +1103,28 @@ void showReceivedAnimation(double amount) {
     const SizedBox(height: 16),
 
 GestureDetector(
-  onTap: () {
-    Navigator.push(
+  onTap: () async {
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
-       builder: (_) => PinSettingsScreen(
-  regId: widget.regId,
-),
-
+        builder: (_) => PinSettingsScreen(
+          regId: widget.regId,
+        ),
       ),
     );
+
+    if (result == true && mounted) {
+      final dashboardState =
+          context.findAncestorStateOfType<_DashboardScreenState>();
+
+      dashboardState?.setState(() {
+        dashboardState.currentIndex = 1; 
+      });
+    }
   },
+
+
+
   child: Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
@@ -1238,7 +1434,7 @@ class _WalletBalanceStripState extends State<_WalletBalanceStrip> {
     );
   }
 }
-class _MyQrCard extends StatelessWidget {
+class _MyQrCard extends StatefulWidget {
   final String upiId;
   final String name;
   final String walletStatus;
@@ -1249,6 +1445,29 @@ class _MyQrCard extends StatelessWidget {
     required this.walletStatus,
   });
 
+  @override
+  State<_MyQrCard> createState() => _MyQrCardState();
+}
+
+class _MyQrCardState extends State<_MyQrCard> {
+  bool upiCopied = false;
+
+  void _copyUpiId() async {
+    await Clipboard.setData(
+      ClipboardData(text: widget.upiId),
+    );
+
+    setState(() {
+      upiCopied = true;
+    });
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() {
+        upiCopied = false;
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1264,43 +1483,39 @@ class _MyQrCard extends StatelessWidget {
       child: Column(
         children: [
           // ================= UPI ID =================
-              Container(
-  padding: const EdgeInsets.symmetric(
-    horizontal: 14,
-    vertical: 10,
-  ),
-  decoration: BoxDecoration(
-    color: Colors.grey.shade100,
-    borderRadius: BorderRadius.circular(14),
-  ),
-  child: Row(
-    children: [
-      Expanded(
-        child: Text(
-          upiId,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      IconButton(
-        icon: const Icon(Icons.copy, size: 18),
-        onPressed: () {
-          Clipboard.setData(
-            ClipboardData(text: upiId),
-          );
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("UPI ID copied"),
-              duration: Duration(seconds: 1),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 10,
             ),
-          );
-        },
-      ),
-    ],
-  ),
-),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.upiId,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _copyUpiId,
+                  child: Icon(
+                    upiCopied ? Icons.check_circle : Icons.copy,
+                    size: 18,
+                    color: upiCopied
+                        ? Colors.green
+                        : const Color(0xFF4C6EF5),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
           const SizedBox(height: 16),
 
@@ -1308,43 +1523,40 @@ class _MyQrCard extends StatelessWidget {
           GestureDetector(
             onTap: () {
               Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (_) => MyQrScreen(
-      name: name,
-      upiId: upiId,
-      walletActive: walletStatus == "active",
-    ),
-  ),
-);
-
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MyQrScreen(
+                    name: widget.name,
+                    upiId: widget.upiId,
+                    walletActive: widget.walletStatus == "active",
+                  ),
+                ),
+              );
             },
             child: Container(
               height: 140,
               width: double.infinity,
               decoration: BoxDecoration(
-  color: Colors.grey.shade100,
-  borderRadius: BorderRadius.circular(18),
-),
-
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(18),
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: const [
                   Icon(
-  Icons.qr_code_2,
-  size: 48,
-  color: Color(0xFF4C6EF5),
-),
-
+                    Icons.qr_code_2,
+                    size: 48,
+                    color: Color(0xFF4C6EF5),
+                  ),
                   SizedBox(height: 10),
                   Text(
-  "My QR Code",
-  style: TextStyle(
-    color: Color(0xFF4C6EF5),
-    fontSize: 16,
-    fontWeight: FontWeight.bold,
-  ),
-),
+                    "My QR Code",
+                    style: TextStyle(
+                      color: Color(0xFF4C6EF5),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),

@@ -199,6 +199,31 @@ def login_verify_otp():
     finally:
         c.close()
         conn.close()
+# ============== Upload profile image =============
+@app.route("/api/profile/upload", methods=["POST"])
+def upload_profile_image():
+    file = request.files.get("image")
+    reg_id = request.form.get("reg_id")
+
+    if not file:
+        return {"message": "NO_FILE"}, 400
+
+    filename = f"profile_{reg_id}.jpg"
+    path = f"uploads/{filename}"
+    file.save(path)
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("""
+        UPDATE registered_students
+        SET profile_image=%s
+        WHERE id=%s
+    """, (path, reg_id))
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"image_url": path}, 200
 
  
 # ======================STUDENT DETAILS (AUTHORITATIVE STATE)=====================
@@ -1430,6 +1455,48 @@ def verify_pin_api():
     finally:
         c.close()
         conn.close()
+# ==== PIN  OTP ===========
+@app.route("/api/pin/send-otp", methods=["POST"])
+def send_pin_otp():
+    d = request.json
+    reg_id = d.get("reg_id")
+
+    if not reg_id:
+        return {"message": "INVALID_REQUEST"}, 400
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT s.mobile
+        FROM registered_students rs
+        JOIN students s ON rs.student_id = s.id
+        WHERE rs.id = %s
+    """, (reg_id,))
+
+    user = c.fetchone()
+    c.close()
+    conn.close()
+
+    if not user:
+        return {"message": "USER_NOT_FOUND"}, 404
+
+    send_mobile_otp(user["mobile"])
+    return {"message": "OTP_SENT"}, 200
+# ============  PIN verify OTp ======
+@app.route("/api/pin/verify-otp", methods=["POST"])
+def verify_pin_otp():
+    d = request.json
+    otp = d.get("otp")
+
+    if not otp:
+        return {"message": "OTP_REQUIRED"}, 400
+
+    if not verify_otp(otp):
+        return {"message": "INVALID_OTP"}, 400
+
+    return {"message": "OTP_VERIFIED"}, 200
+      
 # =============== Add money =================
 @app.route("/api/wallet/add-money/init", methods=["POST"])
 def init_add_money():
