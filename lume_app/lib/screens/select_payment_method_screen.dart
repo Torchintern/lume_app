@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-
+import '../widgets/create_upi_dialog.dart';
 import '../services/api_service.dart';
 import 'my_qr_screen.dart';
 import 'add_card_and_pay_screen.dart';
@@ -78,12 +78,15 @@ class _SelectPaymentMethodScreenState
 
   // ================= COPY UPI =================
   void _copyUpi() {
-    Clipboard.setData(ClipboardData(text: widget.upiId));
-    _showResultDialog(
-      success: true,
-      message: "UPI ID copied to clipboard",
-    );
-  }
+  if (widget.upiId.isEmpty) return;
+
+  Clipboard.setData(ClipboardData(text: widget.upiId));
+  _showResultDialog(
+    success: true,
+    message: "UPI ID copied to clipboard",
+  );
+}
+
 
   // ================= CONFIRM DELETE CARD =================
   void _confirmDeleteCard(int cardId) {
@@ -229,17 +232,29 @@ class _SelectPaymentMethodScreenState
                 icon: Icons.qr_code_2,
                 title: "Show QR and receive money",
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => MyQrScreen(
-                        name: widget.fullName,
-                        upiId: widget.upiId,
-                        walletActive: true,
-                      ),
-                    ),
+                if (widget.upiId.isEmpty) {
+                  showCreateUpiDialog(
+                    context: context,
+                    regId: widget.regId,
+                    onSuccess: () {
+                      Navigator.pop(context);
+                    },
                   );
-                },
+                  return;
+                }
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MyQrScreen(
+                      name: widget.fullName,
+                      upiId: widget.upiId,
+                      walletActive: true,
+                    ),
+                  ),
+                );
+              },
+
               ),
 
               const SizedBox(height: 12),
@@ -320,7 +335,7 @@ class _SelectPaymentMethodScreenState
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    "${cardTypeLabel(cardType)} • **** ${c["last4"]}",
+                                    "${cardTypeLabel(cardType)} **** ${c["last4"]}",
                                     style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
@@ -350,47 +365,85 @@ class _SelectPaymentMethodScreenState
   }
 
   // ================= UPI TILE =================
-  Widget _upiTile() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 8),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.alternate_email,
-              color: Color(0xFF4C6EF5)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Receive via UPI ID",
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  widget.upiId,
-                  style: const TextStyle(color: Colors.grey),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+ Widget _upiTile() {
+  if (widget.upiId.isEmpty) {
+    return GestureDetector(
+      onTap: () {
+        showCreateUpiDialog(
+          context: context,
+          regId: widget.regId,
+          onSuccess: () {
+            Navigator.pop(context);
+          },
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 8),
+          ],
+        ),
+        child: Row(
+          children: const [
+            Icon(Icons.add, color: Color(0xFF4C6EF5)),
+            SizedBox(width: 12),
+            Text(
+              "+ Create UPI ID",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF4C6EF5),
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.copy, color: Colors.grey),
-            onPressed: _copyUpi,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: const [
+        BoxShadow(color: Colors.black12, blurRadius: 8),
+      ],
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.alternate_email,
+            color: Color(0xFF4C6EF5)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Receive via UPI ID",
+                style:
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                widget.upiId,
+                style: const TextStyle(color: Colors.grey),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.copy, color: Colors.grey),
+          onPressed: _copyUpi,
+        ),
+      ],
+    ),
+  );
+}
+
 
   // ================= SIMPLE TILE =================
   Widget _simpleTile({

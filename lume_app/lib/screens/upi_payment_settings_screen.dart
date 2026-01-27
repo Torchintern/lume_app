@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:local_auth/local_auth.dart';
+import '/widgets/create_upi_dialog.dart';
 
 class UpiPaymentSettingsScreen extends StatefulWidget {
-  final String upiId;
+  final String? upiId;
   final String mobile;
+  final int regId;
 
   const UpiPaymentSettingsScreen({
     super.key,
     required this.upiId,
     required this.mobile,
+    required this.regId,
   });
 
   @override
@@ -25,6 +28,8 @@ class _UpiPaymentSettingsScreenState
   bool biometricEnabled = false;
   bool biometricSupported = false;
   bool upiCopied = false;
+  bool _biometricProcessing = false;
+  String get _biometricKey => "biometric_payment_${widget.regId}";
 
   @override
   void initState() {
@@ -39,6 +44,7 @@ class _UpiPaymentSettingsScreenState
       final canCheck = await _auth.canCheckBiometrics;
       final isSupported = await _auth.isDeviceSupported();
 
+      if (!mounted) return;
       setState(() {
         biometricSupported = canCheck && isSupported;
       });
@@ -47,19 +53,40 @@ class _UpiPaymentSettingsScreenState
     }
   }
 
-  // ================= LOAD SAVED SETTING =================
+  // ================= LOAD SAVED SETTING (PER USER) =================
   Future<void> _loadBiometricSetting() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
-      biometricEnabled = prefs.getBool("biometric_payment") ?? false;
+      biometricEnabled = prefs.getBool(_biometricKey) ?? false;
     });
   }
 
-  // ================= TOGGLE BIOMETRIC (WITH AUTH) =================
-  Future<void> _toggleBiometric(bool value) async {
-    if (!biometricSupported) return;
-    if (value) {
-      final didAuthenticate = await _auth.authenticate(
+  // ================= HANDLE BIOMETRIC TOGGLE =================
+  Future<void> _handleBiometricToggle(bool enable) async {
+    if (!biometricSupported || _biometricProcessing) return;
+
+    final prefs = await SharedPreferences.getInstance();
+
+    // DISABLE
+    if (!enable) {
+      await prefs.setBool(_biometricKey, false);
+      if (!mounted) return;
+      setState(() {
+        biometricEnabled = false;
+      });
+      return;
+    }
+
+    // ENABLE (needs biometric)
+    setState(() {
+      _biometricProcessing = true;
+    });
+
+    bool success = false;
+
+    try {
+      success = await _auth.authenticate(
         localizedReason:
             "Confirm fingerprint to enable biometric payments",
         options: const AuthenticationOptions(
@@ -67,22 +94,28 @@ class _UpiPaymentSettingsScreenState
           stickyAuth: true,
         ),
       );
-
-      if (!didAuthenticate) return;
+    } catch (_) {
+      success = false;
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool("biometric_payment", value);
+    if (!mounted) return;
+
+    if (success) {
+      await prefs.setBool(_biometricKey, true);
+      setState(() {
+        biometricEnabled = true;
+      });
+    }
 
     setState(() {
-      biometricEnabled = value;
+      _biometricProcessing = false;
     });
   }
 
   // ================= COPY UPI =================
   void _copyUpiId() async {
     await Clipboard.setData(
-      ClipboardData(text: widget.upiId),
+      ClipboardData(text: widget.upiId ?? ""),
     );
 
     setState(() => upiCopied = true);
@@ -121,7 +154,6 @@ class _UpiPaymentSettingsScreenState
                   ),
                   child: Column(
                     children: [
-                      // LOGO + BANK NAME
                       Row(
                         children: [
                           Container(
@@ -150,7 +182,7 @@ class _UpiPaymentSettingsScreenState
 
                       const SizedBox(height: 20),
 
-                      // UPI ID ROW
+                      // ================= UPI ID =================
                       Row(
                         children: [
                           const Text(
@@ -161,33 +193,55 @@ class _UpiPaymentSettingsScreenState
                             ),
                           ),
                           Expanded(
-                            child: Text(
-                              widget.upiId,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                            child: (widget.upiId == null ||
+                                    widget.upiId!.isEmpty)
+                                ? GestureDetector(
+                                    onTap: () => showCreateUpiDialog(
+                                      context: context,
+                                      regId: widget.regId,
+                                      onSuccess: () {
+                                        Navigator.pop(context, true);
+                                      },
+                                    ),
+                                    child: const Text(
+                                      "+ Create UPI ID",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Color(0xFF4C6EF5),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    widget.upiId!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                          if (widget.upiId != null &&
+                              widget.upiId!.isNotEmpty)
+                            GestureDetector(
+                              onTap: _copyUpiId,
+                              child: Icon(
+                                upiCopied
+                                    ? Icons.check_circle
+                                    : Icons.copy,
+                                size: 18,
+                                color: upiCopied
+                                    ? Colors.green
+                                    : const Color(0xFF4C6EF5),
                               ),
                             ),
-                          ),
-                          GestureDetector(
-                            onTap: _copyUpiId,
-                            child: Icon(
-                              upiCopied
-                                  ? Icons.check_circle
-                                  : Icons.copy,
-                              size: 18,
-                              color: upiCopied
-                                  ? Colors.green
-                                  : const Color(0xFF4C6EF5),
-                            ),
-                          ),
                         ],
                       ),
 
                       const SizedBox(height: 10),
 
-                      // UPI NUMBER ROW
+                      // ================= UPI NUMBER =================
                       Row(
                         children: [
                           const Text(
@@ -253,12 +307,11 @@ class _UpiPaymentSettingsScreenState
                             ),
                           ),
                           Switch(
-                            value:
-                                biometricSupported && biometricEnabled,
-                            activeColor:
-                                const Color(0xFF4C6EF5),
-                            onChanged: biometricSupported
-                                ? _toggleBiometric
+                            value: biometricEnabled,
+                            activeColor: const Color(0xFF4C6EF5),
+                            onChanged: biometricSupported &&
+                                    !_biometricProcessing
+                                ? (v) => _handleBiometricToggle(v)
                                 : null,
                           ),
                         ],
@@ -285,7 +338,6 @@ class _UpiPaymentSettingsScreenState
 
           const Spacer(),
 
-          // ================= FOOTER =================
           const Padding(
             padding: EdgeInsets.only(bottom: 20),
             child: Text(

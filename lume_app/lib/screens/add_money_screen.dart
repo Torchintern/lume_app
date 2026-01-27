@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'my_qr_screen.dart';
+import '../services/api_service.dart';
 import 'select_payment_method_screen.dart';
 
 class AddMoneyScreen extends StatefulWidget {
@@ -10,6 +11,7 @@ class AddMoneyScreen extends StatefulWidget {
   final String walletStatus;
   final int aadhaarVerified;
   final int panVerified;
+  final String? profileImage;
 
   const AddMoneyScreen({
     super.key,
@@ -20,6 +22,7 @@ class AddMoneyScreen extends StatefulWidget {
     required this.walletStatus,
     required this.aadhaarVerified,
     required this.panVerified,
+    this.profileImage,
   });
 
   @override
@@ -74,18 +77,22 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MyQrScreen(
-                    name: widget.fullName,
-                    upiId: widget.upiId,
-                    walletActive: true,
-                  ),
+            onPressed: () async {
+            final details =
+                await ApiService.getStudentDetails(widget.regId);
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MyQrScreen(
+                  name: widget.fullName,
+                  upiId: widget.upiId,
+                  walletActive: true,
+                  profileImageUrl: details["profile_image"],
                 ),
-              );
-            },
+              ),
+            );
+          },
           ),
         ],
       ),

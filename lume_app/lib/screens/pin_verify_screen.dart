@@ -23,18 +23,17 @@ class PinVerifyScreen extends StatefulWidget {
   @override
   State<PinVerifyScreen> createState() => _PinVerifyScreenState();
 }
-
 class _PinVerifyScreenState extends State<PinVerifyScreen> {
   static const int pinLength = 4;
-
+  static const int maxAttempts = 3;
   final LocalAuthentication _auth = LocalAuthentication();
-
   String enteredPin = "";
   String? error;
   bool locked = false;
   bool verifying = false;
-
+  int attemptsLeft = maxAttempts;
   bool showBiometric = false;
+  String get _biometricKey => "biometric_payment_${widget.regId}";
 
   // ================= INIT =================
   @override
@@ -43,10 +42,10 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
     _loadBiometricPreference();
   }
 
+  // ================= LOAD BIOMETRIC PREF =================
   Future<void> _loadBiometricPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    final biometricEnabled =
-        prefs.getBool("biometric_payment") ?? false;
+    final biometricEnabled = prefs.getBool(_biometricKey) ?? false;
 
     bool supported = false;
     try {
@@ -56,7 +55,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
       supported = false;
     }
 
-    /// ₹10,000 LIMIT ENFORCED HERE
+    /// ₹10,000 LIMIT
     final bool withinLimit =
         widget.amount == null || widget.amount! <= 10000;
 
@@ -116,7 +115,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
 
     if (res["message"] == "PIN_VERIFIED") {
       widget.onVerified();
-      Navigator.pop(context);
+      Navigator.pop(context, true);
       return;
     }
 
@@ -142,9 +141,17 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
     if (res["message"] == "INVALID_PIN") {
       setState(() {
         enteredPin = "";
-        final attemptsLeft = res["attempts_left"] ?? 0;
-        error = "Wrong PIN. Attempts left: $attemptsLeft";
+        attemptsLeft = res["attempts_left"] ?? attemptsLeft - 1;
+        error =
+            "Wrong PIN. Attempts left: $attemptsLeft";
       });
+
+      if (attemptsLeft <= 0) {
+        setState(() {
+          locked = true;
+          error = "PIN locked. Reset required.";
+        });
+      }
       return;
     }
 
@@ -169,7 +176,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
 
       if (success && mounted) {
         widget.onVerified();
-        Navigator.pop(context);
+        Navigator.pop(context, true);
       }
     } catch (_) {
       // silent fail → PIN fallback
@@ -180,7 +187,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF7F8FC),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -206,13 +213,14 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(pinLength, (index) {
                 return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8),
                   width: 14,
                   height: 14,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: index < enteredPin.length
-                        ? Colors.grey.shade800
+                        ? const Color(0xFF4C6EF5)
                         : Colors.grey.shade300,
                   ),
                 );
@@ -256,7 +264,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
                   "Forgot PIN",
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.blue,
+                    color: Color(0xFF4C6EF5),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -285,12 +293,15 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
           children: [
             showBiometric
                 ? _iconButton(
-                    Icons.fingerprint, _verifyWithBiometric)
+                    Icons.fingerprint,
+                    _verifyWithBiometric,
+                  )
                 : const SizedBox(width: 88),
-
             _keyButton("0"),
             _iconButton(
-                Icons.backspace_outlined, _onDelete),
+              Icons.backspace_outlined,
+              _onDelete,
+            ),
           ],
         ),
       ],
@@ -330,7 +341,8 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
     );
   }
 
-  Widget _iconButton(IconData icon, VoidCallback onTap) {
+  Widget _iconButton(
+      IconData icon, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.all(12),
       child: InkWell(
@@ -344,7 +356,11 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
             shape: BoxShape.circle,
             color: Colors.grey.shade200,
           ),
-          child: Icon(icon, size: 22),
+          child: Icon(
+            icon,
+            size: 22,
+            color: const Color(0xFF4C6EF5),
+          ),
         ),
       ),
     );

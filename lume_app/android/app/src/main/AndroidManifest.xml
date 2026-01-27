@@ -1,37 +1,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ===================================================== -->
-    <!-- REQUIRED PERMISSIONS -->
-    <!-- ===================================================== -->
-
-    <!-- Internet access (API calls, backend sync, UPI) -->
+    <!-- Internet access -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- Android 13+ notification permission -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
+
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         android:required="false" />
 
-    <!-- Android 13+ media access (gallery for QR download) -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES"
         android:required="false" />
 
-    <!-- Android 12 and below storage permission (REQUIRED for Permission.storage) -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"
         android:required="false" />
 
-    <!-- ===================================================== -->
-    <!-- APPLICATION -->
-    <!-- ===================================================== -->
-
     <application
         android:label="lume_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="false">
+        android:requestLegacyExternalStorage="false"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
@@ -43,7 +36,6 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
-            <!-- Flutter splash / launch theme -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
@@ -52,18 +44,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-
         </activity>
 
-        <!-- Flutter embedding -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
-    <!-- ===================================================== -->
-    <!-- PACKAGE VISIBILITY -->
-    <!-- ===================================================== -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

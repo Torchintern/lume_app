@@ -43,6 +43,10 @@ class TransactionTile extends StatelessWidget {
       default:
         statusColor = Colors.grey;
     }
+    final String displayName =
+        (txn["display_name"] ?? "").toString().trim();
+    final String upiId =
+        (txn["upi_id"] ?? "").toString().trim();
 
     return GestureDetector(
       onTap: () {
@@ -53,8 +57,9 @@ class TransactionTile extends StatelessWidget {
               amount: (txn["amount"] as num).toDouble(),
               status: txn["status"],
               direction: txn["direction"],
-              payeeName: txn["counterparty_name"] ?? "-",
-              payee: txn["counterparty_upi"] ?? "-",
+              payeeName: displayName,
+              payee: upiId,
+
               isWallet: txn["payment_type"] == "Wallet",
               createdAt: txn["created_at"],
             ),
@@ -82,17 +87,14 @@ class TransactionTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 🔹 TITLE
                   Text(
-                    txn["title"] ?? "Transaction",
+                    _titleText(direction, displayName),
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 15,
                     ),
                   ),
                   const SizedBox(height: 4),
-
-                  // 🔹 DATE (EXACT FORMAT)
                   Text(
                     _formatDate(txn["created_at"]),
                     style: const TextStyle(
@@ -134,6 +136,17 @@ class TransactionTile extends StatelessWidget {
   }
 
   // ================= HELPERS =================
+
+  String _titleText(String direction, String name) {
+    final safeName = name.isNotEmpty ? name : "Unknown";
+    if (direction == "credit") {
+      return "Received from $safeName";
+    }
+    if (direction == "topup") {
+      return "Wallet Top-Up";
+    }
+    return "Paid to $safeName";
+  }
 
   String _amountText(dynamic txn) {
     final double amount = double.parse(txn["amount"].toString());

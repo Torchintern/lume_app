@@ -101,58 +101,64 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     return months[m - 1];
   }
 
-  // ================= FILTER LOGIC (FIXED PROPERLY) =================
+  // ================= FILTER LOGIC =================
   void _applyFilters() {
-  List<dynamic> temp = List.from(allTransactions);
+    List<dynamic> temp = List.from(allTransactions);
 
-  // MONTH-ONLY TIME FILTER 
-  if (fromMonth != null && toMonth != null) {
-    final startMonth =
-        DateTime(fromMonth!.year, fromMonth!.month);
-    final endMonth =
-        DateTime(toMonth!.year, toMonth!.month);
+    if (fromMonth != null && toMonth != null) {
+      final startMonth =
+          DateTime(fromMonth!.year, fromMonth!.month);
+      final endMonth =
+          DateTime(toMonth!.year, toMonth!.month);
 
-    temp = temp.where((t) {
-      final d = DateTime.parse(t["created_at"]);
+      temp = temp.where((t) {
+        final d = DateTime.parse(t["created_at"]);
+        final txMonth = DateTime(d.year, d.month);
 
-      // normalize transaction date to month start
-      final txMonth = DateTime(d.year, d.month);
+        return !txMonth.isBefore(startMonth) &&
+            !txMonth.isAfter(endMonth);
+      }).toList();
+    }
 
-      return !txMonth.isBefore(startMonth) &&
-             !txMonth.isAfter(endMonth);
-    }).toList();
+    if (statusFilter != 'All') {
+      temp = temp.where((t) =>
+          t["status"].toString().toLowerCase() ==
+          statusFilter.toLowerCase()).toList();
+    }
+
+    setState(() {
+      filteredTransactions = temp;
+    });
   }
 
-  //  STATUS FILTER
-  if (statusFilter != 'All') {
-    temp = temp.where((t) =>
-      t["status"].toString().toLowerCase() ==
-      statusFilter.toLowerCase()
-    ).toList();
-  }
-
-  setState(() {
-    filteredTransactions = temp;
-  });
-}
-
-
-  // ================= FILTER HEADER =================
+  // ================= FILTER HEADER (UPDATED) =================
   Widget _filterHeader() {
+    final String timeLabel =
+        (fromMonth != null && toMonth != null)
+            ? "${_monthShort(fromMonth!.month)} ${fromMonth!.year} - "
+              "${_monthShort(toMonth!.month)} ${toMonth!.year}"
+            : "Time";
+
+    final String statusLabel =
+        statusFilter == 'All' ? "Status" : _capitalize(statusFilter);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _filterChip("Time", _openTimeSheet),
+          _filterChip(timeLabel, _openTimeSheet,
+              isActive: fromMonth != null),
           const SizedBox(width: 12),
-          _filterChip("Status", _openStatusSheet),
+          _filterChip(statusLabel, _openStatusSheet,
+              isActive: statusFilter != 'All'),
         ],
       ),
     );
   }
 
-  Widget _filterChip(String label, VoidCallback onTap) {
+  Widget _filterChip(String label, VoidCallback onTap,
+      {bool isActive = false}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(24),
@@ -160,16 +166,21 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         padding:
             const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isActive ? Colors.blue.shade50 : Colors.white,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.grey.shade400),
+          border: Border.all(
+            color: isActive ? Colors.blue : Colors.grey.shade400,
+          ),
         ),
         child: Row(
           children: [
             Text(
               label,
-              style: const TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isActive ? Colors.blue : Colors.black,
+              ),
             ),
             const SizedBox(width: 6),
             const Icon(Icons.keyboard_arrow_down, size: 18),
@@ -197,21 +208,24 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          loading
-              ? const Center(child: CircularProgressIndicator())
-              : filteredTransactions.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No transactions found",
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        _filterHeader(),
-                        Expanded(child: _buildTransactionList()),
-                      ],
-                    ),
+          Column(
+            children: [
+              _filterHeader(),
+              Expanded(
+                child: loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : filteredTransactions.isEmpty
+                        ? const Center(
+                            child: Text(
+                              "No transactions found",
+                              style:
+                                  TextStyle(color: Colors.grey),
+                            ),
+                          )
+                        : _buildTransactionList(),
+              ),
+            ],
+          ),
           Column(
             children: [
               _filterHeader(),
@@ -285,7 +299,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) {
         return StatefulBuilder(
@@ -303,34 +318,36 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                   ),
                   const SizedBox(height: 24),
                   _rangeButton(
-                      "From",
-                      "${_monthShort(tempFrom.month)}, ${tempFrom.year}",
-                      () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: tempFrom,
-                      firstDate: DateTime(2018),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setModal(() => tempFrom = picked);
-                    }
-                  }),
+                    "From",
+                    "${_monthShort(tempFrom.month)}, ${tempFrom.year}",
+                    () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: tempFrom,
+                        firstDate: DateTime(2018),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setModal(() => tempFrom = picked);
+                      }
+                    },
+                  ),
                   const SizedBox(height: 12),
                   _rangeButton(
-                      "To",
-                      "${_monthShort(tempTo.month)}, ${tempTo.year}",
-                      () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: tempTo,
-                      firstDate: DateTime(2018),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setModal(() => tempTo = picked);
-                    }
-                  }),
+                    "To",
+                    "${_monthShort(tempTo.month)}, ${tempTo.year}",
+                    () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: tempTo,
+                        firstDate: DateTime(2018),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setModal(() => tempTo = picked);
+                      }
+                    },
+                  ),
                   const SizedBox(height: 24),
                   _applyButton(() {
                     setState(() {
@@ -373,7 +390,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) {
         return StatefulBuilder(

@@ -3,6 +3,8 @@ from flask_cors import CORS
 from db import get_db_connection
 from otp_service import send_mobile_otp, send_email_otp, verify_otp
 import bcrypt
+import os
+from flask import send_from_directory
 
 def hash_pin(pin: str) -> str:
     return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
@@ -205,27 +207,38 @@ def upload_profile_image():
     file = request.files.get("image")
     reg_id = request.form.get("reg_id")
 
-    if not file:
-        return {"message": "NO_FILE"}, 400
+    if not file or not reg_id:
+        return {"message": "INVALID_REQUEST"}, 400
+
+    upload_dir = "uploads"
+    os.makedirs(upload_dir, exist_ok=True) 
 
     filename = f"profile_{reg_id}.jpg"
-    path = f"uploads/{filename}"
+    path = os.path.join(upload_dir, filename)
+
     file.save(path)
 
     conn = get_db_connection()
     c = conn.cursor()
+    image_url = f"http://192.168.0.4:5000/{path}"
+
     c.execute("""
         UPDATE registered_students
         SET profile_image=%s
         WHERE id=%s
-    """, (path, reg_id))
+    """, (image_url, reg_id))
     conn.commit()
     c.close()
     conn.close()
 
-    return {"image_url": path}, 200
+    image_url = f"http://192.168.0.4:5000/{path}"
+    return {"image_url": image_url}, 200
 
- 
+
+@app.route("/uploads/<path:filename>")
+def serve_uploaded_file(filename):
+    return send_from_directory("uploads", filename)
+
 # ======================STUDENT DETAILS (AUTHORITATIVE STATE)=====================
 
 @app.route("/api/student/details/<int:reg_id>", methods=["GET"])
@@ -238,6 +251,7 @@ def student_details(reg_id):
         s.full_name,
         s.mobile,
         s.email,
+        rs.profile_image,
         rs.upi_id,
         rs.aadhaar_verified,
         rs.pan_verified,
@@ -499,6 +513,17 @@ def wallet_to_wallet_transfer():
 
     sender_reg_id = d["sender_reg_id"]
     receiver_identifier = d["receiver_mobile"]
+    # ================= UPI MANDATORY CHECK =================
+    c.execute("""
+        SELECT upi_id
+        FROM registered_students
+        WHERE id = %s
+    """, (sender_reg_id,))
+    sender_upi = c.fetchone()
+
+    if not sender_upi or not sender_upi["upi_id"]:
+        return {"message": "UPI_REQUIRED"}, 403
+
 
     try:
         # ================= FETCH KYC STATUS =================
@@ -690,23 +715,6 @@ def wallet_to_wallet_transfer():
         c.close()
         conn.close()
 
-# ==== Helper: Get internal user by UPI ====
-def get_reg_id_and_upi_by_upi(upi_id):
-    conn = get_db_connection()
-    c = conn.cursor(dictionary=True)
-
-    c.execute("""
-        SELECT id AS reg_id, upi_id
-        FROM registered_students
-        WHERE LOWER(upi_id) = %s
-    """, (upi_id.lower(),))
-
-    row = c.fetchone()
-
-    c.close()
-    conn.close()
-    return row
-
 # =================== Wallet > UPI ===========================
 @app.route("/api/pay/upi", methods=["POST"])
 def wallet_to_upi_payment():
@@ -723,25 +731,37 @@ def wallet_to_upi_payment():
     sender_id = d["sender_reg_id"]
     upi_id = d["upi_id"].lower()
 
-    # ================= INTERNAL UPI (LUME USER) =================
-    if upi_id.endswith("@lumepay"):
-        receiver = get_reg_id_and_upi_by_upi(upi_id)
-        if not receiver:
-            return {"message": "UPI_NOT_FOUND"}, 404
+    # Check if this UPI belongs to a LUME user
+    receiver_reg_id = get_reg_id_by_upi(upi_id)
 
-        return wallet_to_wallet_transfer_internal(
-            sender_id,
-            receiver["reg_id"],
-            receiver["upi_id"],
-            amount
-        )
+    # ===== Extract name for QR payments =====
+    upi_name = d.get("name")
 
-    # ================= EXTERNAL UPI =================
+    if not upi_name and "pn=" in d.get("upi_id", ""):
+        try:
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(d["upi_id"])
+            params = parse_qs(parsed.query)
+            upi_name = params.get("pn", [None])[0]
+        except:
+            upi_name = None
+
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
     try:
-        # Lock sender wallet
+        # ================= UPI MANDATORY CHECK =================
+        c.execute("""
+            SELECT upi_id
+            FROM registered_students
+            WHERE id = %s
+        """, (sender_id,))
+        sender = c.fetchone()
+
+        if not sender or not sender["upi_id"]:
+            return {"message": "UPI_REQUIRED"}, 403
+
+        # ================= LOCK SENDER WALLET =================
         c.execute("""
             SELECT balance, status
             FROM wallets
@@ -761,56 +781,76 @@ def wallet_to_upi_payment():
                 "WALLET_INACTIVE",
                 "upi",
                 "upi",
-                d.get("name")
+                upi_name
             )
-
             conn.commit()
             return {"message": "WALLET_INACTIVE"}, 403
 
         if wallet["balance"] < amount:
             _log_txn(
-                    c,
-                    sender_id,
-                    None,
-                    upi_id,
-                    amount,
-                    "failed",
-                    "INSUFFICIENT_BALANCE",
-                    "upi",
-                    "upi",
-                    d.get("name")
-                )
-
+                c,
+                sender_id,
+                None,
+                upi_id,
+                amount,
+                "failed",
+                "INSUFFICIENT_BALANCE",
+                "upi",
+                "upi",
+                upi_name
+            )
             conn.commit()
             return {"message": "INSUFFICIENT_BALANCE"}, 400
 
-        # Deduct balance
+        # ================= DEBIT SENDER =================
         c.execute("""
             UPDATE wallets
             SET balance = balance - %s
             WHERE registered_student_id = %s
         """, (amount, sender_id))
 
-        # Log external UPI txn
-        _log_txn(
-            c,
-            sender_id,
-            None,
-            upi_id,
-            amount,
-            "success",
-            None,
-            "upi",
-            "upi",
-            d.get("name")
-        )
+        # ================= INTERNAL vs EXTERNAL =================
+        if receiver_reg_id:
+            # INTERNAL QR
+            c.execute("""
+                UPDATE wallets
+                SET balance = balance + %s
+                WHERE registered_student_id = %s
+            """, (amount, receiver_reg_id))
 
+            _log_txn(
+                c,
+                sender_id,
+                receiver_reg_id,
+                upi_id,
+                amount,
+                "success",
+                None,
+                "transfer",
+                "wallet",
+                upi_name
+            )
+        else:
+            # EXTERNAL UPI
+            _log_txn(
+                c,
+                sender_id,
+                None,
+                upi_id,
+                amount,
+                "success",
+                None,
+                "upi",
+                "upi",
+                upi_name
+            )
 
         conn.commit()
         return {"message": "UPI_PAYMENT_SUCCESS"}, 200
 
     except Exception as e:
         conn.rollback()
+
         _log_txn(
             c,
             sender_id,
@@ -821,9 +861,8 @@ def wallet_to_upi_payment():
             str(e),
             "upi",
             "upi",
-            d.get("name")
+            upi_name
         )
-
         conn.commit()
         return {"message": "UPI_PAYMENT_FAILED"}, 500
 
@@ -837,6 +876,29 @@ def wallet_to_wallet_transfer_internal(sender_id, receiver_id, receiver_upi, amo
     c = conn.cursor(dictionary=True)
 
     try:
+        # ================= UPI MANDATORY CHECK =================
+        c.execute("""
+            SELECT upi_id
+            FROM registered_students
+            WHERE id = %s
+        """, (sender_id,))
+        sender_upi = c.fetchone()
+
+        if not sender_upi or not sender_upi["upi_id"]:
+            _log_txn(
+                c,
+                sender_id,
+                receiver_id,
+                receiver_upi,
+                amount,
+                "failed",
+                "UPI_NOT_CREATED",
+                "transfer",
+                "wallet"
+            )
+            conn.commit()
+            return {"message": "UPI_REQUIRED"}, 403
+
         # ================= LOCK SENDER WALLET =================
         c.execute("""
             SELECT balance, status
@@ -992,6 +1054,10 @@ def _log_txn(
     payment_method="wallet",
     counterparty_name=None
 ):
+    if counterparty_name:
+        counterparty_name = counterparty_name.strip()
+    else:
+        counterparty_name = None
 
     c.execute("""
         INSERT INTO wallet_transactions (
@@ -1003,7 +1069,7 @@ def _log_txn(
             status,
             failure_reason,
             txn_type,
-            payment_method 
+            payment_method
         )
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
     """, (
@@ -1016,10 +1082,7 @@ def _log_txn(
         failure_reason,
         txn_type,
         payment_method
-
     ))
-
-
 
 # ================= TRANSACTION HISTORY =================
 @app.route("/api/transactions/<int:reg_id>", methods=["GET"])
@@ -1041,12 +1104,9 @@ def get_transactions(reg_id):
               wt.receiver_upi_id,
               wt.counterparty_name,
 
-                         
-            s_sender.full_name AS sender_name,
-            rs_sender.upi_id AS sender_upi_id,
-            s_receiver.full_name AS receiver_name
-
-
+              s_sender.full_name AS sender_name,
+              rs_sender.upi_id AS sender_upi_id,
+              s_receiver.full_name AS receiver_name
 
             FROM wallet_transactions wt
 
@@ -1072,43 +1132,46 @@ def get_transactions(reg_id):
         for t in rows:
             txn_type = t["txn_type"]
             sender_id = t["sender_reg_id"]
-            receiver_id = t["receiver_reg_id"]
 
-            # ===== DEFAULTS (FIXES UNBOUND ERROR) =====
             payment_type = "Wallet"
-            counterparty_upi = ""
-
-            sender_name = t["sender_name"] or t["receiver_upi_id"] or "Unknown"
-            receiver_name = t["receiver_name"] or t["receiver_upi_id"] or "Unknown"
+            display_name = ""
+            upi_id = ""
 
             # ================= WALLET TOP-UP =================
             if txn_type == "add_money":
                 direction = "topup"
                 title = "Wallet Top-Up"
-                counterparty_name = "Wallet"
-                counterparty_upi = ""
+                display_name = "Wallet"
+                upi_id = ""
                 payment_type = "Wallet"
 
             # ================= PAID (DEBIT) =================
             elif sender_id == reg_id:
                 direction = "debit"
-                title = f"Paid to {receiver_name}"
-                counterparty_name = receiver_name
-                counterparty_upi = t["receiver_upi_id"] or ""
+                display_name = (
+                    t["counterparty_name"]
+                    or t["receiver_name"]
+                    or "Unknown"
+                )
+
+                title = f"Paid to {display_name}"
+                upi_id = t["receiver_upi_id"] or ""
                 payment_type = "Wallet" if txn_type == "transfer" else "UPI"
 
             # ================= RECEIVED (CREDIT) =================
             else:
                 direction = "credit"
-                title = f"Received from {sender_name}"
-                counterparty_name = sender_name
-                counterparty_upi = (
-                    t["sender_upi_id"]
-                    or t["sender_name"]
+
+                display_name = (
+                    t["sender_name"]
+                    or t["counterparty_name"]
                     or "Unknown"
                 )
+
+                title = f"Received from {display_name}"
+                upi_id = t["sender_upi_id"] or ""
                 payment_type = "Wallet" if txn_type == "transfer" else "UPI"
-                
+
             # ================= STATUS TEXT =================
             if t["status"] == "success":
                 status_text = "Success"
@@ -1126,9 +1189,10 @@ def get_transactions(reg_id):
                 "id": t["id"],
                 "amount": float(t["amount"]),
                 "direction": direction,
+                "display_name": display_name,
+                "upi_id": upi_id,
+
                 "title": title,
-                "counterparty_name": counterparty_name,
-                "counterparty_upi": counterparty_upi,
                 "payment_type": payment_type,
                 "status": t["status"],
                 "status_text": status_text,
@@ -1140,7 +1204,6 @@ def get_transactions(reg_id):
                 ),
             })
 
-
         return result, 200
 
     except Exception as e:
@@ -1150,7 +1213,6 @@ def get_transactions(reg_id):
     finally:
         c.close()
         conn.close()
-
 # ================= ADD MONEY TO WALLET =================
 @app.route("/api/wallet/add-money", methods=["POST"])
 def add_money_to_wallet():
@@ -1825,5 +1887,11 @@ def auto_cancel_expired_pending_transactions():
 
 #========================= RUN=========================
 
+"""if __name__ == "__main__":
+    app.run(debug=True)"""
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(
+    host="0.0.0.0",
+    port=5000,
+    debug=True
+)

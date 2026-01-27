@@ -9,13 +9,14 @@ import 'add_money_screen.dart';
 import 'package:flutter/services.dart';
 import 'my_qr_screen.dart';
 import 'transactions_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lume_app/widgets/transaction_tile.dart';
 import 'pin_settings_screen.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'upi_payment_settings_screen.dart';
 import 'pin_verify_screen.dart';
+import 'package:lume_app/widgets/create_upi_dialog.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -51,9 +52,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool isKycCompleted = false;
   String? upiId;
   String? userName;
-  File? profileImage;
   String? profileImageUrl;
-
 
   // ================= USER HELPERS =================
   String get initials {
@@ -63,41 +62,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ? "${parts[0][0]}${parts[1][0]}".toUpperCase()
         : widget.fullName.substring(0, 2).toUpperCase();
   }
-void logout() {
+Future<void> logout() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove("session_reg_id");
+  await prefs.remove("session_mobile");
+  await prefs.remove("session_email");
+  await prefs.remove("session_name");
+  if (!mounted) return;
   Navigator.of(context).pushAndRemoveUntil(
     MaterialPageRoute(builder: (_) => const LoginScreen()),
     (route) => false,
   );
 }
 
-
-  Future<void> _loadProfileData() async {
-  final prefs = await SharedPreferences.getInstance();
-  setState(() {
-    userName = prefs.getString("user_name") ?? widget.fullName;
-    final imagePath = prefs.getString("profile_image_path");
-    if (imagePath != null) {
-      profileImage = File(imagePath);
-    }
-  });
+// Refresh wallet balance
+Future<void> refreshWalletNow() async {
+  final walletState =
+      context.findAncestorStateOfType<_WalletViewState>();
+  walletState?.refreshAll();
+  await _refreshStudentState();
 }
+
+
 Future<void> _pickImage(ImageSource source) async {
   final picker = ImagePicker();
-
   final picked = await picker.pickImage(
     source: source,
     imageQuality: 80,
   );
 
-  if (picked != null) {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("profile_image_path", picked.path);
+  if (picked == null) return;
 
-    setState(() {
-      profileImage = File(picked.path);
-    });
-  }
+  await ApiService.uploadProfileImage(
+    regId: widget.regId,
+    imageFile: File(picked.path),
+  );
+  await _refreshStudentState();
+  setState(() {});
 }
+
+
 
 Future<void> _pickProfileImage() async {
   showModalBottomSheet(
@@ -180,7 +184,6 @@ void initState() {
   }
   _loadUnreadCount();
   _refreshStudentState();
-  _loadProfileData();
 }
 // Pin status check
 Future<void> openWalletPinFlow() async {
@@ -226,6 +229,7 @@ Future<void> _refreshStudentState() async {
 
       walletStatus = data["wallet_status"] ?? "inactive";
       upiId = data["upi_id"];
+       profileImageUrl = data["profile_image"];
 
       final percent =
           (data["kyc_completion_percent"] ?? 0).toDouble();
@@ -236,6 +240,31 @@ Future<void> _refreshStudentState() async {
     // silent fail
   }
 }
+Widget buildUserAvatar(double radius) {
+  if (profileImageUrl != null && profileImageUrl!.isNotEmpty) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundImage: NetworkImage(
+  "$profileImageUrl?ts=${DateTime.now().millisecondsSinceEpoch}",
+),
+      backgroundColor: const Color(0xFFE8ECFF),
+    );
+  }
+
+  return CircleAvatar(
+    radius: radius,
+    backgroundColor: const Color(0xFFE8ECFF),
+    child: Text(
+      initials,
+      style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF4C6EF5),
+      ),
+    ),
+  );
+}
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -258,22 +287,7 @@ Future<void> _refreshStudentState() async {
                 children: [
                   GestureDetector(
                     onTap: _pickProfileImage,
-                    child: CircleAvatar(
-                          radius: 22,
-                          backgroundColor: const Color(0xFFE8ECFF),
-                          backgroundImage: profileImage != null
-                              ? FileImage(profileImage!)
-                              : null,
-                          child: profileImage == null
-                              ? Text(
-                                  initials,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF4C6EF5),
-                                  ),
-                                )
-                              : null,
-                        ),
+                    child: buildUserAvatar(22),
                   ),
                   Positioned(
                     right: 0,
@@ -317,10 +331,28 @@ Future<void> _refreshStudentState() async {
                 style: const TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 2),
-              Text(
-                upiId ?? "No UPI ID",
+              upiId == null || upiId!.isEmpty
+            ? GestureDetector(
+                onTap: () => showCreateUpiDialog(
+                  context: context,
+                  regId: widget.regId,
+                  onSuccess: () {
+                    _refreshStudentState();
+                  },
+                ),
+                child: const Text(
+                  "+ Create UPI ID",
+                  style: TextStyle(
+                    color: Color(0xFF4C6EF5),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            : Text(
+                upiId!,
                 style: const TextStyle(color: Colors.grey),
               ),
+
               const Divider(height: 40),
               ListTile(
                 leading: const Icon(Icons.person_outline),
@@ -341,21 +373,23 @@ Future<void> _refreshStudentState() async {
                   },
               ),
               ListTile(
-                leading: const Icon(Icons.payments_outlined),
-                title: const Text("UPI & Payment Settings"),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UpiPaymentSettingsScreen(
-                        upiId: upiId ?? "",
-                        mobile: widget.mobile,
+                  leading: const Icon(Icons.payments_outlined),
+                  title: const Text("UPI & Payment Settings"),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UpiPaymentSettingsScreen(
+                          regId: widget.regId,
+                          upiId: upiId,
+                          mobile: widget.mobile,
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                ),
               const Spacer(),
               ListTile(
                 leading: const Icon(Icons.logout),
@@ -381,17 +415,7 @@ Future<void> _refreshStudentState() async {
             Builder(
               builder: (context) => GestureDetector(
                 onTap: () => Scaffold.of(context).openDrawer(),
-                child: CircleAvatar(
-                  radius: 22,
-                  backgroundColor: const Color(0xFFE8ECFF),
-                  child: Text(
-                    initials,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF4C6EF5),
-                    ),
-                  ),
-                ),
+                child: buildUserAvatar(22),
               ),
             ),
 
@@ -548,6 +572,24 @@ bool isMobile(String v) => RegExp(r'^[6-9]\d{9}$').hasMatch(v);
 bool isUpi(String v) => v.contains('@');
 
 void openPayment(Map to, bool isWallet) async {
+  final dashboardState =
+      context.findAncestorStateOfType<_DashboardScreenState>();
+
+  if (dashboardState == null ||
+    dashboardState.upiId == null ||
+    dashboardState.upiId!.isEmpty) {
+  showCreateUpiDialog(
+    context: context,
+    regId: widget.regId,
+    onSuccess: () {
+  if (dashboardState != null) {
+    dashboardState._refreshStudentState();
+  }
+},
+
+  );
+  return;
+}
   final result = await Navigator.push(
     context,
     MaterialPageRoute(
@@ -561,13 +603,17 @@ void openPayment(Map to, bool isWallet) async {
   );
 
   if (result == true) {
-    upiController.clear(); 
-    paySuggestions.clear();
-    setState(() {});
-  }
+  upiController.clear();
+  paySuggestions.clear();
+
+  final dashboardState =
+      context.findAncestorStateOfType<_DashboardScreenState>();
+
+  await dashboardState?.refreshWalletNow();
+
+  setState(() {});
 }
-
-
+}
 
   Future<void> _loadBalance() async {
     try {
@@ -588,8 +634,55 @@ void openPayment(Map to, bool isWallet) async {
 
   @override
   Widget build(BuildContext context) {
+    final dashboardState =
+      context.findAncestorStateOfType<_DashboardScreenState>();
     return Column(
       children: [
+        if (dashboardState != null &&
+    (dashboardState.upiId == null ||
+     dashboardState.upiId!.isEmpty))
+  GestureDetector(
+    onTap: () => showCreateUpiDialog(
+      context: context,
+      regId: widget.regId,
+      onSuccess: () {
+        dashboardState._refreshStudentState();
+      },
+    ),
+    child: Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7E6), 
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFFFD27D),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Icon(
+            Icons.info_outline,
+            color: Color(0xFFFF9800),
+            size: 20,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "Note: Create your UPI ID to make payments.",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  ),
+
        // ================= BALANCE CARD =================
 Container(
   padding: const EdgeInsets.all(18),
@@ -646,6 +739,25 @@ const SizedBox(height: 16),
         // ================= TAP & PAY =================
 GestureDetector(
   onTap: () async {
+    final dashboardState =
+        context.findAncestorStateOfType<_DashboardScreenState>();
+
+   if (dashboardState == null ||
+    dashboardState.upiId == null ||
+    dashboardState.upiId!.isEmpty) {
+  showCreateUpiDialog(
+    context: context,
+    regId: widget.regId,
+    onSuccess: () {
+  if (dashboardState != null) {
+    dashboardState._refreshStudentState();
+  }
+},
+
+  );
+  return;
+}
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -1052,24 +1164,22 @@ void showReceivedAnimation(double amount) {
         latest["status"] == "success";
 
     if (isNew && isCredit) {
-      final double amount =
-          double.tryParse(latest["amount"].toString()) ?? 0;
+  final double amount =
+      double.tryParse(latest["amount"].toString()) ?? 0;
+  showReceivedAnimation(amount);
+  widget.onNewCredit();
 
-      showReceivedAnimation(amount);
-      widget.onNewCredit();
-    }
-
+  final dashboardState =
+      context.findAncestorStateOfType<_DashboardScreenState>();
+  dashboardState?.refreshWalletNow();
+}
     _lastTxnId = latest["id"];
   }
-
   setState(() {
     transactions = newTxns; 
     loadingTxns = false;
   });
 }
-
-
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1101,60 +1211,84 @@ void showReceivedAnimation(double amount) {
       regId: widget.regId,
     ),
     const SizedBox(height: 16),
+  GestureDetector(
+    onTap: widget.walletStatus == "active"
+        ? () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PinSettingsScreen(
+                  regId: widget.regId,
+                ),
+              ),
+            );
 
-GestureDetector(
-  onTap: () async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PinSettingsScreen(
-          regId: widget.regId,
-        ),
+            if (result == true && mounted) {
+              final dashboardState =
+                  context.findAncestorStateOfType<_DashboardScreenState>();
+
+              dashboardState?.setState(() {
+                dashboardState.currentIndex = 1;
+              });
+            }
+          }
+        : null,
+
+    child: Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 8),
+        ],
       ),
-    );
-
-    if (result == true && mounted) {
-      final dashboardState =
-          context.findAncestorStateOfType<_DashboardScreenState>();
-
-      dashboardState?.setState(() {
-        dashboardState.currentIndex = 1; 
-      });
-    }
-  },
-
-
-
-  child: Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: const [
-        BoxShadow(color: Colors.black12, blurRadius: 8),
-      ],
-    ),
-    child: Row(
-      children: const [
-        Icon(
-          Icons.lock_outline,
-          color: Color(0xFF4C6EF5),
-        ),
-        SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            "Wallet PIN",
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
+      child: Row(
+        children: [
+          Icon(
+            widget.walletStatus == "active"
+                ? Icons.lock_open
+                : Icons.lock_outline,
+            color: widget.walletStatus == "active"
+                ? const Color(0xFF4C6EF5)
+                : Colors.grey,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Wallet PIN",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: widget.walletStatus == "active"
+                        ? Colors.black
+                        : Colors.grey,
+                  ),
+                ),
+                if (widget.walletStatus != "active")
+                  const Text(
+                    "Activate wallet to set PIN",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+              ],
             ),
           ),
-        ),
-        Icon(Icons.chevron_right),
-      ],
+          Icon(
+            Icons.chevron_right,
+            color: widget.walletStatus == "active"
+                ? Colors.black
+                : Colors.grey,
+          ),
+        ],
+      ),
     ),
   ),
-),
 
   ],
 );
@@ -1375,28 +1509,30 @@ class _WalletBalanceStripState extends State<_WalletBalanceStrip> {
           // ================= RIGHT ACTION =================
           if (isActive)
             GestureDetector(
-  onTap: () async {
-    final refreshed = await Navigator.push(
+      onTap: () async {
+        final refreshed = await Navigator.push(
       context,
       MaterialPageRoute(
-   builder: (_) => AddMoneyScreen(
-  regId: widget.regId,
-  fullName: widget.fullName,
-  mobile: widget.mobile,
-  upiId: widget.upiId,
-  walletStatus: widget.walletStatus,
-  aadhaarVerified: widget.aadhaarVerified,
-  panVerified: widget.panVerified,
-),
-
-
-
+        builder: (_) => AddMoneyScreen(
+          regId: widget.regId,
+          fullName: widget.fullName,
+          mobile: widget.mobile,
+          upiId: widget.upiId,
+          walletStatus: widget.walletStatus,
+          aadhaarVerified: widget.aadhaarVerified,
+          panVerified: widget.panVerified,
+        ),
       ),
     );
 
-    if (refreshed == true) {
-  _loadBalance();
-}
+    if (refreshed == true && mounted) {
+      _loadBalance();
+
+      final dashboardState =
+          context.findAncestorStateOfType<_DashboardScreenState>();
+      dashboardState?.refreshWalletNow();
+    }
+
   },
   child: Container(
                 padding:
@@ -1483,45 +1619,90 @@ class _MyQrCardState extends State<_MyQrCard> {
       child: Column(
         children: [
           // ================= UPI ID =================
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 10,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.upiId,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: _copyUpiId,
-                  child: Icon(
-                    upiCopied ? Icons.check_circle : Icons.copy,
-                    size: 18,
-                    color: upiCopied
-                        ? Colors.green
-                        : const Color(0xFF4C6EF5),
-                  ),
-                ),
-              ],
+Container(
+  padding: const EdgeInsets.symmetric(
+    horizontal: 14,
+    vertical: 10,
+  ),
+  decoration: BoxDecoration(
+    color: Colors.grey.shade100,
+    borderRadius: BorderRadius.circular(14),
+  ),
+  child: widget.upiId.isEmpty
+      ? GestureDetector(
+          onTap: () {
+            final dashboardState =
+    context.findAncestorStateOfType<_DashboardScreenState>();
+
+if (dashboardState == null) return;
+
+showCreateUpiDialog(
+  context: context,
+  regId: dashboardState.widget.regId,
+  onSuccess: () {
+    dashboardState._refreshStudentState();
+  },
+);
+
+          },
+          child: const Text(
+            "+ Create UPI ID",
+            style: TextStyle(
+              color: Color(0xFF4C6EF5),
+              fontWeight: FontWeight.w600,
             ),
           ),
+        )
+      : Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.upiId,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            GestureDetector(
+              onTap: _copyUpiId,
+              child: Icon(
+                upiCopied ? Icons.check_circle : Icons.copy,
+                size: 18,
+                color: upiCopied
+                    ? Colors.green
+                    : const Color(0xFF4C6EF5),
+              ),
+            ),
+          ],
+        ),
+),
 
-          const SizedBox(height: 16),
+const SizedBox(height: 16),
+
 
           // ================= MY QR CODE =================
           GestureDetector(
             onTap: () {
+
+              if (widget.upiId.isEmpty) {
+                final dashboardState =
+    context.findAncestorStateOfType<_DashboardScreenState>();
+
+if (dashboardState == null) return;
+
+showCreateUpiDialog(
+  context: context,
+  regId: dashboardState.widget.regId,
+  onSuccess: () {
+    dashboardState._refreshStudentState();
+  },
+);
+
+                return;
+              }
+    final dashboardState =
+    context.findAncestorStateOfType<_DashboardScreenState>();
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -1529,6 +1710,7 @@ class _MyQrCardState extends State<_MyQrCard> {
                     name: widget.name,
                     upiId: widget.upiId,
                     walletActive: widget.walletStatus == "active",
+                    profileImageUrl: dashboardState?.profileImageUrl,
                   ),
                 ),
               );

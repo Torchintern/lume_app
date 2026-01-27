@@ -3,11 +3,12 @@ import '../services/api_service.dart';
 import 'pin_verify_screen.dart';
 import 'payment_result_screen.dart';
 import 'pin_settings_screen.dart';
+import '../widgets/create_upi_dialog.dart';
 
 class PaymentAmountScreen extends StatefulWidget {
   final int regId;
-  final String payee;
-  final String payeeName;
+  final String payee;        // UPI ID or mobile
+  final String payeeName;    // detected name
   final bool isWalletTransfer;
 
   const PaymentAmountScreen({
@@ -36,11 +37,9 @@ class _PaymentAmountScreenState
     _loadBalance();
   }
 
-  // ================= LOAD BALANCE =================
   Future<void> _loadBalance() async {
     try {
-      final b =
-          await ApiService.getWalletBalance(widget.regId);
+      final b = await ApiService.getWalletBalance(widget.regId);
       if (!mounted) return;
       setState(() {
         balance = b;
@@ -58,7 +57,6 @@ class _PaymentAmountScreenState
   double get amount =>
       amountText.isEmpty ? 0.0 : double.tryParse(amountText) ?? 0.0;
 
-  // ================= AMOUNT INPUT =================
   void _addDigit(String d) {
     if (d == "." && amountText.contains(".")) return;
     setState(() => amountText += d);
@@ -79,11 +77,32 @@ class _PaymentAmountScreenState
       !loadingBalance &&
       amount <= balance &&
       widget.payee.isNotEmpty &&
-      (widget.payee.contains("@") ||
-          widget.payee.length == 10);
+      (widget.payee.contains("@") || widget.payee.length == 10);
 
-  // ================= PAY BUTTON ENTRY =================
+  Future<bool> _ensureUpiCreated() async {
+    try {
+      final details =
+          await ApiService.getStudentDetails(widget.regId);
+      final upiId = details["upi_id"];
+
+      if (upiId == null || upiId.isEmpty) {
+        await showCreateUpiDialog(
+          context: context,
+          regId: widget.regId,
+          onSuccess: () {},
+        );
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _onPayPressed() async {
+    final hasUpi = await _ensureUpiCreated();
+    if (!hasUpi) return;
+
     final status =
         await ApiService.getPinStatus(widget.regId);
     final bool walletPinSet = status["wallet"] == true;
@@ -93,11 +112,6 @@ class _PaymentAmountScreenState
       return;
     }
 
-    _startPaymentFlow();
-  }
-
-  // ================= PIN VERIFY =================
-  Future<void> _startPaymentFlow() async {
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -105,35 +119,33 @@ class _PaymentAmountScreenState
           regId: widget.regId,
           type: "wallet",
           onVerified: _executePayment,
+          amount: amount,
         ),
       ),
     );
   }
 
-  // ================= EXECUTE PAYMENT =================
   Future<void> _executePayment() async {
     if (!canPay) return;
 
     setState(() => paying = true);
-
     String status = "failed";
 
     try {
-      final bool isUpiPayment =
-          widget.payee.contains("@");
       bool ok = false;
 
-      if (isUpiPayment) {
-        ok = await ApiService.payViaUpi(
-          widget.regId,
-          widget.payee,
-          amount,
-        );
-      } else {
+      if (!widget.payee.contains("@")) {
         ok = await ApiService.walletToWalletTransfer(
           senderRegId: widget.regId,
           receiverMobile: widget.payee,
           amount: amount,
+        );
+      } else {
+        ok = await ApiService.payViaUpi(
+          widget.regId,
+          widget.payee,
+          amount,
+          widget.payeeName,
         );
       }
 
@@ -143,7 +155,6 @@ class _PaymentAmountScreenState
     }
 
     if (!mounted) return;
-
     setState(() => paying = false);
 
     Navigator.pushReplacement(
@@ -163,7 +174,6 @@ class _PaymentAmountScreenState
     );
   }
 
-  // ================= WALLET PIN REQUIRED DIALOG =================
   void _showWalletPinRequiredDialog() {
     showDialog(
       context: context,
@@ -187,7 +197,6 @@ class _PaymentAmountScreenState
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-
               await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -205,77 +214,72 @@ class _PaymentAmountScreenState
     );
   }
 
-  // ================= UI =================
   @override
   Widget build(BuildContext context) {
+    final bool isUpi = widget.payee.contains("@");
+
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Column(
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            Text(
-              "₹${amountText.isEmpty ? "0" : amountText}",
-              style: const TextStyle(
-                fontSize: 44,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            Column(
-              children: [
-                Text(
-                  widget.payeeName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.payee,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    widget.payee.contains("@")
-                        ? "UPI Payment"
-                        : "Lume Wallet",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: widget.payee.contains("@")
-                          ? Colors.blue
-                          : Colors.green,
-                      fontWeight: FontWeight.w600,
+            // ================= TOP (SCROLLABLE) =================
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "₹${amountText.isEmpty ? "0" : amountText}",
+                      style: const TextStyle(
+                        fontSize: 44,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      widget.payeeName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.payee,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isUpi ? "UPI Payment" : "Lume Wallet",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isUpi ? Colors.blue : Colors.green,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
 
-            const Spacer(),
-
+            // ================= KEYPAD (FIXED) =================
             _Keypad(
               onDigit: _addDigit,
               onBackspace: _removeDigit,
             ),
-
-            const SizedBox(height: 10),
 
             Padding(
               padding: const EdgeInsets.all(16),
@@ -285,12 +289,10 @@ class _PaymentAmountScreenState
                 child: ElevatedButton(
                   onPressed: canPay ? _onPayPressed : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: canPay
-                        ? const Color(0xFF4C6EF5)
-                        : Colors.grey,
+                    backgroundColor:
+                        canPay ? const Color(0xFF4C6EF5) : Colors.grey,
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                   child: paying
@@ -350,26 +352,22 @@ class _Keypad extends StatelessWidget {
     return Column(
       children: [
         Row(
-          mainAxisAlignment:
-              MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children:
               ["1", "2", "3"].map((e) => key(e)).toList(),
         ),
         Row(
-          mainAxisAlignment:
-              MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children:
               ["4", "5", "6"].map((e) => key(e)).toList(),
         ),
         Row(
-          mainAxisAlignment:
-              MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children:
               ["7", "8", "9"].map((e) => key(e)).toList(),
         ),
         Row(
-          mainAxisAlignment:
-              MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             key("."),
             key("0"),

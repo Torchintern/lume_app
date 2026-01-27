@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = "http://10.0.2.2:5000/api";
+  static const String baseUrl = "http://192.168.0.4:5000/api";
+  // "http://10.0.2.2:5000/api"
   static const Map<String, String> headers = {
     "Content-Type": "application/json",
   };
@@ -133,6 +135,7 @@ class ApiService {
     "mobile": data["mobile"],
     "email": data["email"],
     "upi_id": data["upi_id"],
+    "profile_image": data["profile_image"],
     "aadhaar_verified": data["aadhaar_verified"],
     "pan_verified": data["pan_verified"],
     "wallet_status": data["wallet_status"],
@@ -140,10 +143,10 @@ class ApiService {
   };
 }
 
-  
+// ====== Get User Profile ==========
 static Future<Map<String, dynamic>> getUserProfile(int regId) async {
   final res = await http.get(
-    Uri.parse("$baseUrl/user/profile/$regId"),
+    Uri.parse("$baseUrl/student/details/$regId"),
   );
 
   if (res.statusCode == 200) {
@@ -152,6 +155,31 @@ static Future<Map<String, dynamic>> getUserProfile(int regId) async {
     throw Exception("Failed to load user profile");
   }
 }
+
+// ===== Upload profile Image =========
+static Future<void> uploadProfileImage({
+  required int regId,
+  required File imageFile,
+}) async {
+  final uri = Uri.parse("$baseUrl/profile/upload");
+
+  final request = http.MultipartRequest("POST", uri)
+    ..fields["reg_id"] = regId.toString()
+    ..files.add(
+      await http.MultipartFile.fromPath(
+        "image",
+        imageFile.path,
+      ),
+    );
+
+  final response = await request.send();
+
+  if (response.statusCode != 200) {
+    throw Exception("Profile image upload failed");
+  }
+}
+
+
 
   // ================= AADHAAR KYC =================
   static Future<bool> verifyAadhaarKyc({
@@ -323,6 +351,7 @@ static Future<bool> payViaUpi(
   int senderRegId,
   String upiId,
   double amount,
+  String name, 
 ) async {
   final res = await http.post(
     Uri.parse("$baseUrl/pay/upi"),
@@ -331,11 +360,13 @@ static Future<bool> payViaUpi(
       "sender_reg_id": senderRegId,
       "upi_id": upiId,
       "amount": amount,
+      "name": name,
     }),
   );
 
   return res.statusCode == 200;
 }
+
 // ================= SEARCH LUME USER BY INTERNAL UPI =================
 static Future<List<dynamic>> searchLumeUserByUpi(String query) async {
   final res = await http.get(
@@ -533,25 +564,26 @@ static Future<Map<String, bool>> getPinStatus(int regId) async {
 }
 
 // ====== wallet to UPI =============
-static Future<void> walletToUpiPayment({
-  required int senderRegId,
-  required String upiId,
-  required double amount,
-}) async {
-  final res = await http.post(
-    Uri.parse("$baseUrl/pay/upi"),
-    headers: headers,
-    body: jsonEncode({
-      "sender_reg_id": senderRegId,
-      "upi_id": upiId,
-      "amount": amount,
-    }),
-  );
+//static Future<void> walletToUpiPayment({
+  //required int senderRegId,
+  //required String upiId,
+  //required double amount,
+///}) async {
+  //final res = await http.post(
+   // Uri.parse("$baseUrl/pay/upi"),
+  //  headers: headers,
+   // body: jsonEncode({
+   //   "sender_reg_id": senderRegId,
+   //   "upi_id": upiId,
+   //   "amount": amount,
+   // }),
+ // );
 
-  if (res.statusCode != 200) {
-    throw Exception(jsonDecode(res.body)["message"]);
-  }
-}
+ //if (res.statusCode != 200) {
+   // throw Exception(jsonDecode(res.body)["message"]);
+ // }
+//}
+
 // ============== init add money transaction ============
 static Future<int?> initAddMoneyTransaction({
   required int regId,

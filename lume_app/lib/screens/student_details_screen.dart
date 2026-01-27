@@ -48,10 +48,13 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
       verifiedAadhaar = prefs.getString("aadhaar_${widget.regId}");
       verifiedPan = prefs.getString("pan_${widget.regId}");
 
-      if (data["upi_id"] != null) {
-        upiCtrl.text =
-            data["upi_id"].toString().replaceAll("@lumepay", "");
-        isUpiEditable = false;
+      if (data["upi_id"] != null && data["upi_id"].toString().isNotEmpty) {
+      upiCtrl.text =
+          data["upi_id"].toString().replaceAll("@lumepay", "");
+      isUpiEditable = false;
+      } else {
+        upiCtrl.clear();
+        isUpiEditable = true;
       }
 
       loading = false;
@@ -448,6 +451,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                 registeredStudentId: widget.regId,
                                 upiId: "$rawUpi@lumepay",
                               );
+                              await loadDetails();
                               setState(() {
                                 isUpiEditable = false;
                                 upiMessage = "UPI ID saved successfully";
