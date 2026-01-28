@@ -17,6 +17,9 @@ import 'package:image_picker/image_picker.dart';
 import 'upi_payment_settings_screen.dart';
 import 'pin_verify_screen.dart';
 import 'package:lume_app/widgets/create_upi_dialog.dart';
+import 'package:lume_app/screens/cashback_store_screen.dart';
+import 'package:lume_app/screens/rewards/brand_vouchers_screen.dart';
+import 'package:lume_app/screens/rewards/my_vouchers_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -53,6 +56,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? upiId;
   String? userName;
   String? profileImageUrl;
+  late final PageController _pageController;
 
   // ================= USER HELPERS =================
   String get initials {
@@ -175,16 +179,27 @@ Future<void> _loadUnreadCount() async {
 @override
 void initState() {
   super.initState();
-  if (widget.initialTab == "wallet") {
-    currentIndex = 1;
-  } else if (widget.initialTab == "card") {
-    currentIndex = 0;
-  } else {
-    currentIndex = 2; 
-  }
+  if (widget.initialTab == "card") {
+  currentIndex = 0;
+} else if (widget.initialTab == "wallet") {
+  currentIndex = 1;
+} else if (widget.initialTab == "pay") {
+  currentIndex = 2;
+} else if (widget.initialTab == "rewards") {
+  currentIndex = 3;
+} else {
+  currentIndex = 2; 
+}
+_pageController = PageController(initialPage: currentIndex);
   _loadUnreadCount();
   _refreshStudentState();
 }
+@override
+void dispose() {
+  _pageController.dispose();
+  super.dispose();
+}
+
 // Pin status check
 Future<void> openWalletPinFlow() async {
   final status = await ApiService.getPinStatus(widget.regId);
@@ -403,107 +418,117 @@ Widget buildUserAvatar(double radius) {
       ),
 
       // ================= BODY =================
-      body: SafeArea(
-  child: SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // ================= TOP ROW =================
-        Row(
-          children: [
-            Builder(
-              builder: (context) => GestureDetector(
-                onTap: () => Scaffold.of(context).openDrawer(),
-                child: buildUserAvatar(22),
-              ),
-            ),
-
-            const Spacer(),
-
-            Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications_none, size: 26),
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsScreen(),
-                      ),
-                    );
-
-                    // refresh badge count when returning
-                    _loadUnreadCount();
-                  },
-                ),
-
-                // BADGE
-                if (unreadCount > 0)
-                  Positioned(
-                    right: 6,
-                    top: 6,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      child: Center(
-                        child: Text(
-                          unreadCount > 9 ? "9+" : unreadCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+     body: SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ================= TOP ROW =================
+              Row(
+                children: [
+                  Builder(
+                    builder: (context) => GestureDetector(
+                      onTap: () => Scaffold.of(context).openDrawer(),
+                      child: buildUserAvatar(22),
                     ),
                   ),
-              ],
-            ),
-          ],
-        ),
+                  const Spacer(),
+                  Stack(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.notifications_none, size: 26),
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const NotificationsScreen(),
+                            ),
+                          );
+                          _loadUnreadCount();
+                        },
+                      ),
+                      if (unreadCount > 0)
+                        Positioned(
+                          right: 6,
+                          top: 6,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 16,
+                              minHeight: 16,
+                            ),
+                            child: Text(
+                              unreadCount > 9 ? "9+" : unreadCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
 
-        const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-        // ================= TAB CONTENT =================
-        if (currentIndex == 1)
-         _WalletView(
-  regId: widget.regId,
-  walletStatus: walletStatus,
-  fullName: widget.fullName,
-  upiId: upiId ?? "",
-  mobile: widget.mobile,
-  aadhaarVerified: widget.aadhaarVerified,
-  panVerified: widget.panVerified,
-  onNewCredit: _loadUnreadCount,
-)
+              // ================= TAB CONTENT (SLIDEABLE) =================
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    setState(() {
+                      currentIndex = index;
+                    });
+                  },
+                  children: [
+                    const Center(child: Text("Card Coming Soon")),
 
-        else
-          _PayView(
-            regId: widget.regId,
-            kycProgress: kycProgress,
-            isKycCompleted: isKycCompleted,
-            onKycUpdated: _refreshStudentState,
+                    _WalletView(
+                      regId: widget.regId,
+                      walletStatus: walletStatus,
+                      fullName: widget.fullName,
+                      upiId: upiId ?? "",
+                      mobile: widget.mobile,
+                      aadhaarVerified: widget.aadhaarVerified,
+                      panVerified: widget.panVerified,
+                      onNewCredit: _loadUnreadCount,
+                    ),
+
+                    _PayView(
+                      regId: widget.regId,
+                      kycProgress: kycProgress,
+                      isKycCompleted: isKycCompleted,
+                      onKycUpdated: _refreshStudentState,
+                    ),
+
+                    const _RewardsView(),
+                  ],
+                ),
+              ),
+            ],
           ),
-      ],
-    ),
-  ),
-),
-
+        ),
+      ),
 
       // ================= BOTTOM NAV =================
       bottomNavigationBar: SafeArea(
         child: BottomNavigationBar(
           currentIndex: currentIndex,
-          onTap: (i) {
+         onTap: (i) {
             setState(() => currentIndex = i);
+            _pageController.animateToPage(
+              i,
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOut,
+            );
           },
           selectedItemColor: const Color(0xFF4C6EF5),
           unselectedItemColor: Colors.grey,
@@ -528,6 +553,7 @@ Widget buildUserAvatar(double radius) {
           ],
         ),
       ),
+
     ),
     );
   }
@@ -636,8 +662,11 @@ void openPayment(Map to, bool isWallet) async {
   Widget build(BuildContext context) {
     final dashboardState =
       context.findAncestorStateOfType<_DashboardScreenState>();
-    return Column(
-      children: [
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        children: [
         if (dashboardState != null &&
     (dashboardState.upiId == null ||
      dashboardState.upiId!.isEmpty))
@@ -929,21 +958,31 @@ Container(
         // ================= ICON ROW =================
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: const [
-            _PayOption(
+          children: [
+            const _PayOption(
               icon: Icons.flash_on,
               label: "Recharge",
-              cashback: "2% cashback",
+              cashback: "5% cashback",
             ),
-            _PayOption(
+            const _PayOption(
               icon: Icons.play_circle_fill,
               label: "Google Play",
               cashback: "5% cashback",
             ),
-            _PayOption(
-              icon: Icons.card_giftcard,
-              label: "Cashbacks",
-              cashback: "Up to 10%",
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CashbackStoreScreen(),
+                  ),
+                );
+              },
+              child: const _PayOption(
+                icon: Icons.card_giftcard,
+                label: "Cashbacks",
+                cashback: "Up to 20%",
+              ),
             ),
           ],
         ),
@@ -1010,6 +1049,7 @@ if (!widget.isKycCompleted)
 
 
       ],
+      )
     );
   }
 }
@@ -1181,119 +1221,120 @@ void showReceivedAnimation(double amount) {
   });
 }
   @override
-  Widget build(BuildContext context) {
-    return Column(
-  children: [
-   _WalletBalanceStrip(
-  regId: widget.regId,
-  walletStatus: widget.walletStatus,
-  fullName: widget.fullName,
-  upiId: widget.upiId,
-  mobile: widget.mobile,
-  aadhaarVerified: widget.aadhaarVerified,
-  panVerified: widget.panVerified,
-),
+Widget build(BuildContext context) {
+  return SingleChildScrollView(
+    physics: const BouncingScrollPhysics(),
+    padding: const EdgeInsets.only(bottom: 24),
+    child: Column(
+      children: [
+        _WalletBalanceStrip(
+          regId: widget.regId,
+          walletStatus: widget.walletStatus,
+          fullName: widget.fullName,
+          upiId: widget.upiId,
+          mobile: widget.mobile,
+          aadhaarVerified: widget.aadhaarVerified,
+          panVerified: widget.panVerified,
+        ),
 
+        const SizedBox(height: 16),
 
+        _MyQrCard(
+          upiId: widget.upiId,
+          name: widget.fullName,
+          walletStatus: widget.walletStatus,
+        ),
 
-    const SizedBox(height: 16),
-    _MyQrCard(
-  upiId: widget.upiId,
-  name: widget.fullName,
-  walletStatus: widget.walletStatus,
-),
+        const SizedBox(height: 16),
 
+        _TransactionHistoryCard(
+          loading: loadingTxns,
+          transactions: transactions,
+          regId: widget.regId,
+        ),
 
-    const SizedBox(height: 16),
-    _TransactionHistoryCard(
-      loading: loadingTxns,
-      transactions: transactions,
-      regId: widget.regId,
-    ),
-    const SizedBox(height: 16),
-  GestureDetector(
-    onTap: widget.walletStatus == "active"
-        ? () async {
-            final result = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PinSettingsScreen(
-                  regId: widget.regId,
-                ),
-              ),
-            );
+        const SizedBox(height: 16),
 
-            if (result == true && mounted) {
-              final dashboardState =
-                  context.findAncestorStateOfType<_DashboardScreenState>();
-
-              dashboardState?.setState(() {
-                dashboardState.currentIndex = 1;
-              });
-            }
-          }
-        : null,
-
-    child: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 8),
-        ],
-      ),
-      child: Row(
-        children: [
-          Icon(
-            widget.walletStatus == "active"
-                ? Icons.lock_open
-                : Icons.lock_outline,
-            color: widget.walletStatus == "active"
-                ? const Color(0xFF4C6EF5)
-                : Colors.grey,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Wallet PIN",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: widget.walletStatus == "active"
-                        ? Colors.black
-                        : Colors.grey,
-                  ),
-                ),
-                if (widget.walletStatus != "active")
-                  const Text(
-                    "Activate wallet to set PIN",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
+        GestureDetector(
+          onTap: widget.walletStatus == "active"
+              ? () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PinSettingsScreen(
+                        regId: widget.regId,
+                      ),
                     ),
+                  );
+
+                  if (result == true && mounted) {
+                    final dashboardState =
+                        context.findAncestorStateOfType<_DashboardScreenState>();
+                    dashboardState?.setState(() {
+                      dashboardState.currentIndex = 1;
+                    });
+                  }
+                }
+              : null,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(color: Colors.black12, blurRadius: 8),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  widget.walletStatus == "active"
+                      ? Icons.lock_open
+                      : Icons.lock_outline,
+                  color: widget.walletStatus == "active"
+                      ? const Color(0xFF4C6EF5)
+                      : Colors.grey,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Wallet PIN",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: widget.walletStatus == "active"
+                              ? Colors.black
+                              : Colors.grey,
+                        ),
+                      ),
+                      if (widget.walletStatus != "active")
+                        const Text(
+                          "Activate wallet to set PIN",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                    ],
                   ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: widget.walletStatus == "active"
+                      ? Colors.black
+                      : Colors.grey,
+                ),
               ],
             ),
           ),
-          Icon(
-            Icons.chevron_right,
-            color: widget.walletStatus == "active"
-                ? Colors.black
-                : Colors.grey,
-          ),
-        ],
-      ),
+        ),
+      ],
     ),
-  ),
-
-  ],
-);
-
-  }
+  );
+}
 }
 // ================= TRANSACTION HISTORY CARD =================
 class _TransactionHistoryCard extends StatelessWidget {
@@ -1747,4 +1788,288 @@ showCreateUpiDialog(
       ),
     );
   }
+}
+// ================= REWARDS VIEW =================
+class _RewardsView extends StatelessWidget {
+  const _RewardsView();
+
+ @override
+Widget build(BuildContext context) {
+  return SingleChildScrollView(
+    physics: const BouncingScrollPhysics(),
+    padding: const EdgeInsets.only(bottom: 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+
+        // -------- Top categories --------
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            const _RewardCategory(
+              icon: Icons.account_balance_wallet,
+              label: "Cash won",
+            ),
+            const _RewardCategory(
+              icon: Icons.confirmation_number,
+              label: "Coupons",
+            ),
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MyVouchersScreen(),
+                  ),
+                );
+              },
+              child: const _RewardCategory(
+                icon: Icons.card_giftcard,
+                label: "Vouchers",
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+
+        // -------- Featured Brands --------
+        const Text(
+          "Featured Brands",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 14),
+
+        SizedBox(
+          height: 90,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: const [
+              _FeaturedBrandCard(title: "Xbox", cashback: "25% back"),
+              _FeaturedBrandCard(title: "Times Prime", cashback: "90% off"),
+              _FeaturedBrandCard(title: "Zoomin", cashback: "Free item"),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 28),
+
+        // -------- Discounts --------
+        const Text(
+          "Discounts",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 14),
+
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 3,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          children: const [
+            _DiscountTile("Apple", "5% back"),
+            _DiscountTile("Play Store", "5% back"),
+            _DiscountTile("Game Pass", "25% back"),
+            _DiscountTile("Amazon Prime", "12% back"),
+            _DiscountTile("McDonald's", "11% back"),
+            _DiscountTile("Westside", "9% back"),
+            _DiscountTile("AJIO", "4% back"),
+            _DiscountTile("Tata CLiQ", "5% back"),
+            _DiscountTile("Book My Show", "8% back"),
+          ],
+        ),
+        const SizedBox(height: 28),
+
+        GestureDetector(
+          onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const BrandVouchersScreen(),
+            ),
+          );
+        },
+          child: Container(
+            height: 54,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: const Color(0xFFFFC107),
+                width: 1.6,
+              ),
+            ),
+            child: const Center(
+              child: Text(
+                "View All Vouchers",
+                style: TextStyle(
+                  color: Color(0xFFFFC107),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+      ],
+    )
+    );
+  }
+}
+// ============ Rewards category ===============
+class _RewardCategory extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _RewardCategory({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 26,
+          backgroundColor: const Color(0xFFE8ECFF),
+          child: Icon(icon, color: const Color(0xFF4C6EF5)),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+}
+/// ==== Feature Brand card ===============
+class _FeaturedBrandCard extends StatelessWidget {
+  final String title;
+  final String cashback;
+
+  const _FeaturedBrandCard({
+    required this.title,
+    required this.cashback,
+  });
+
+  @override
+Widget build(BuildContext context) {
+  return Container(
+    width: 140,
+    margin: const EdgeInsets.only(right: 12),
+    child: Column(
+      children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: _brandColor,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 6),
+              ],
+            ),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          cashback,
+          style: const TextStyle(
+            color: Color(0xFF1DB954),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+Color get _brandColor {
+  switch (title) {
+    case "Xbox":
+      return const Color(0xFF107C10);
+    case "Times Prime":
+      return const Color(0xFF5E35B1);
+    case "Zoomin":
+      return const Color(0xFFE53935);
+    default:
+      return const Color(0xFF4C6EF5);
+  }
+}
+
+}
+// ======== Discount Title ==================
+class _DiscountTile extends StatelessWidget {
+  final String title;
+  final String cashback;
+
+  const _DiscountTile(this.title, this.cashback);
+
+  @override
+Widget build(BuildContext context) {
+  return Column(
+    children: [
+      Expanded(
+        child: Container(
+          decoration: BoxDecoration(
+            color: _brandColor,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 6),
+            ],
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        cashback,
+        style: const TextStyle(
+          color: Color(0xFF1DB954),
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ],
+  );
+}
+Color get _brandColor {
+  switch (title) {
+    case "Apple":
+      return const Color(0xFF0A2540);
+    case "Play Store":
+      return const Color(0xFF1E8E3E);
+    case "Game Pass":
+      return const Color(0xFF107C10);
+    case "Amazon Prime":
+      return const Color(0xFF1F3C4F);
+    case "McDonald's":
+      return const Color(0xFFFFBC0D);
+    case "Westside":
+      return const Color(0xFF1C1C1C);
+    case "AJIO":
+      return const Color(0xFFB0006D);
+    case "Tata CLiQ":
+      return const Color(0xFF6A1B9A);
+    case "Book My Show":
+      return const Color(0xFFC62828);
+    default:
+      return const Color(0xFF4C6EF5);
+  }
+}
+
 }
