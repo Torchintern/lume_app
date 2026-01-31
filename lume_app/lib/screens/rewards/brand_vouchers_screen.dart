@@ -5,21 +5,58 @@ class BrandVouchersScreen extends StatelessWidget {
 
   static final Map<String, List<_Voucher>> vouchers = {
     "A": [
-      _Voucher("AJIO", "4% back", Color(0xFFB0006D)),
-      _Voucher("Amazon", "Win 1x", Color(0xFFCC3A00)),
-      _Voucher("Amazon Prime", "12% back", Color(0xFF1F3C4F)),
-      _Voucher("Apple", "5% back", Color(0xFF0A2540)),
-      _Voucher("Armani Exchange", "12% back", Color(0xFF2D2A2A)),
-      _Voucher("Arrow", "7% back", Color(0xFF2F4F6F)),
+      _Voucher("assets/brands/armani.png", "12% back"),
+      _Voucher("assets/brands/amazon.png", "12% back"),
+      _Voucher("assets/brands/apple.png", "15% back"),
     ],
     "B": [
-      _Voucher("BookMyShow", "3% back", Color(0xFFC62828)),
+      _Voucher("assets/brands/bookmyshow.png", "10% back"),
     ],
-    "D": [
-      _Voucher("Domino's", "6% back", Color(0xFFFF9800)),
+    "C": [
+      _Voucher("assets/brands/croma.png", "6% back"),
+    ],
+    "F": [
+      _Voucher("assets/brands/flipkart.png", "12% back"),
+    ],
+    "G": [
+      _Voucher("assets/brands/goibibo.png", "8% back"),
+    ],
+    "J": [
+      _Voucher("assets/brands/jackjones.png", "10% back"),
+    ],
+    "M": [
+      _Voucher("assets/brands/mmt.png", "10% back"),
+      _Voucher("assets/brands/mcdonalds.png", "18% back"),
+    ],
+    "N": [
+      _Voucher("assets/brands/netflix.png", "5% back"),
+    ],
+    "P": [
+      _Voucher("assets/brands/pvr.png", "15% back"),
+      _Voucher("assets/brands/prime.png", "6% back"),
+    ],
+    "R": [
+      _Voucher("assets/brands/reliance.png", "5% back"),
+    ],
+    "S": [
+      _Voucher("assets/brands/steam.png", "8% back"),
+      _Voucher("assets/brands/swiggy.png", "12% back"),
+      _Voucher("assets/brands/spotify.png", "7% back"),
+    ],
+    "U": [
+      _Voucher("assets/brands/urbancompany.png", "8% back"),
+    ],
+    "V": [
+      _Voucher("assets/brands/valorant.png", "10% back"),
+    ],
+    "W": [
+      _Voucher("assets/brands/wildcraft.png", "7% back"),
+    ],
+    "X": [
+      _Voucher("assets/brands/gamepass.png", "8% back"),
     ],
     "Z": [
-      _Voucher("Zomato", "1.75% back", Color(0xFF7A1020)),
+      _Voucher("assets/brands/zomato.png", "15% back"),
     ],
   };
 
@@ -44,7 +81,6 @@ class BrandVouchersScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          // ================= HEADER =================
           Column(
             children: const [
               Icon(
@@ -62,10 +98,7 @@ class BrandVouchersScreen extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 24),
-
-          // ================= VOUCHERS =================
           ...vouchers.entries.map(
             (entry) => _VoucherSection(
               letter: entry.key,
@@ -101,7 +134,6 @@ class _VoucherSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -116,7 +148,6 @@ class _VoucherSection extends StatelessWidget {
             return _VoucherTile(voucher: vouchers[i]);
           },
         ),
-
         const SizedBox(height: 28),
       ],
     );
@@ -129,37 +160,73 @@ class _VoucherTile extends StatelessWidget {
 
   const _VoucherTile({required this.voucher});
 
+ Color _backgroundFromLogo() {
+  final logo = voucher.logo.toLowerCase();
+
+  // Shopping
+  if (logo.contains('amazon')) return Colors.white;
+  if (logo.contains('flipkart')) return const Color(0xFF2874F0);
+  if (logo.contains('armani')) return Colors.white;
+
+  // Gaming
+  if (logo.contains('valorant')) return const Color(0xFF1C1C1C);
+  if (logo.contains('steam')) return const Color(0xFF171A21);
+  if (logo.contains('gamepass')) return Colors.white;
+
+  // Food
+  if (logo.contains('zomato')) return const Color(0xFFE23744);
+  if (logo.contains('swiggy')) return Colors.white;
+  if (logo.contains('mcdonalds')) return const Color(0xFF000000);
+
+  // Movies
+  if (logo.contains('bookmyshow')) return const Color(0xFFC62828);
+  if (logo.contains('pvr')) return Colors.black;
+
+  // Self-care
+  if (logo.contains('urbancompany')) return Colors.white;
+
+  // Travel
+  if (logo.contains('mmt')) return const Color(0xFFE53935);
+  if (logo.contains('goibibo')) return Colors.white;
+
+  // Electronics
+  if (logo.contains('croma')) return Colors.white;
+  if (logo.contains('reliance')) return Colors.white;
+  if (logo.contains('apple')) return Colors.white;
+
+  // Fashion
+  if (logo.contains('jackjones')) return Colors.white;
+  if (logo.contains('wildcraft')) return Colors.white;
+
+  // Subscriptions
+  if (logo.contains('netflix')) return Colors.black;
+  if (logo.contains('spotify')) return const Color(0xFF1DB954);
+  if (logo.contains('prime')) return Colors.white;
+
+  // Default fallback
+  return const Color(0xFF2C2C2C);
+}
+
+
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Expanded(
           child: Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: voucher.color,
+              color: _backgroundFromLogo(),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 6,
-                ),
+                BoxShadow(color: Colors.black26, blurRadius: 6),
               ],
             ),
             child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  voucher.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    letterSpacing: 0.3,
-                  ),
-                ),
+              child: Image.asset(
+                voucher.logo,
+                fit: BoxFit.contain,
               ),
             ),
           ),
@@ -180,9 +247,8 @@ class _VoucherTile extends StatelessWidget {
 
 // ================= DATA MODEL =================
 class _Voucher {
-  final String name;
+  final String logo;
   final String offer;
-  final Color color;
 
-  const _Voucher(this.name, this.offer, this.color);
+  const _Voucher(this.logo, this.offer);
 }

@@ -50,4 +50,5 @@ flutter:
 
   assets:
     - assets/lottie/
-    - assets/card_brands/  
+    - assets/card_brands/ 
+    - assets/brands/

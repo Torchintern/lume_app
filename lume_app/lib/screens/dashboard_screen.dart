@@ -1790,11 +1790,23 @@ showCreateUpiDialog(
   }
 }
 // ================= REWARDS VIEW =================
-class _RewardsView extends StatelessWidget {
+const double kRewardCardHeight = 90;
+const double kRewardCardRadius = 18;
+class _RewardsView extends StatefulWidget {
   const _RewardsView();
+
+  @override
+  State<_RewardsView> createState() => _RewardsViewState();
+}
+class _RewardsViewState extends State<_RewardsView>
+    with AutomaticKeepAliveClientMixin {
+  
+  @override
+  bool get wantKeepAlive => true;
 
  @override
 Widget build(BuildContext context) {
+  super.build(context);
   return SingleChildScrollView(
     physics: const BouncingScrollPhysics(),
     padding: const EdgeInsets.only(bottom: 24),
@@ -1840,13 +1852,13 @@ Widget build(BuildContext context) {
         const SizedBox(height: 14),
 
         SizedBox(
-          height: 90,
+          height: 120,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: const [
-              _FeaturedBrandCard(title: "Xbox", cashback: "25% back"),
-              _FeaturedBrandCard(title: "Times Prime", cashback: "90% off"),
-              _FeaturedBrandCard(title: "Zoomin", cashback: "Free item"),
+              _FeaturedBrandCard(title: "gamepass", cashback: "8% back"),
+              _FeaturedBrandCard(title: "prime", cashback: "6% back"),
+              _FeaturedBrandCard(title: "swiggy", cashback: "12% back"),
             ],
           ),
         ),
@@ -1861,23 +1873,24 @@ Widget build(BuildContext context) {
         const SizedBox(height: 14),
 
         GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 3,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          children: const [
-            _DiscountTile("Apple", "5% back"),
-            _DiscountTile("Play Store", "5% back"),
-            _DiscountTile("Game Pass", "25% back"),
-            _DiscountTile("Amazon Prime", "12% back"),
-            _DiscountTile("McDonald's", "11% back"),
-            _DiscountTile("Westside", "9% back"),
-            _DiscountTile("AJIO", "4% back"),
-            _DiscountTile("Tata CLiQ", "5% back"),
-            _DiscountTile("Book My Show", "8% back"),
-          ],
-        ),
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 3,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.78, 
+        children: const [
+          _DiscountTile("apple", "15% back"),
+          _DiscountTile("amazon", "12% back"),
+          _DiscountTile("gamepass", "8% back"),
+          _DiscountTile("prime", "6% back"),
+          _DiscountTile("mcdonalds", "18% back"),
+          _DiscountTile("armani", "12% back"),
+          _DiscountTile("reliance", "5% back"),
+          _DiscountTile("mmt", "10% back"),
+          _DiscountTile("bookmyshow", "10% back"),
+        ],
+      ),
         const SizedBox(height: 28),
 
         GestureDetector(
@@ -1950,31 +1963,119 @@ class _FeaturedBrandCard extends StatelessWidget {
     required this.cashback,
   });
 
+  Color get _brandColor {
+    switch (title) {
+      case "gamepass":
+        return Colors.white;
+      case "prime":
+        return  Colors.white;
+      case "swiggy":
+        return Colors.white;
+      default:
+        return const Color(0xFF4C6EF5);
+    }
+  }
+
   @override
-Widget build(BuildContext context) {
-  return Container(
-    width: 140,
-    margin: const EdgeInsets.only(right: 12),
-    child: Column(
+  Widget build(BuildContext context) {
+    return Container(
+      width: 120,
+      margin: const EdgeInsets.only(right: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              height: 90,
+              decoration: BoxDecoration(
+                color: _brandColor,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 6),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Image.asset(
+                'assets/brands/$title.png',
+                height: 36,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            cashback,
+            style: const TextStyle(
+              color: Color(0xFF1DB954),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ======== Discount Title ==================
+class _DiscountTile extends StatelessWidget {
+  final String title;
+  final String cashback;
+
+  const _DiscountTile(this.title, this.cashback);
+
+  Color get _brandColor {
+    switch (title) {
+      case "apple":
+        return Colors.white;
+      case "amazon":
+        return Colors.white; 
+      case "gamepass":
+        return Colors.white;
+      case "prime":
+        return Colors.white;
+      case "mcdonalds":
+        return const Color(0xFF000000);
+      case "armani":
+       return Colors.white;
+      case "reliance":
+        return Colors.white;
+      case "mmt":
+        return const Color(0xFFE53935);
+      case "bookmyshow":
+        return const Color(0xFFC62828);
+      default:
+        return const Color(0xFF4C6EF5);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
+        ClipRRect(
+          borderRadius: BorderRadius.circular(18),
           child: Container(
+            height: 90,
             decoration: BoxDecoration(
               color: _brandColor,
-              borderRadius: BorderRadius.circular(18),
               boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 6),
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 6),
+                ),
               ],
             ),
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Image.asset(
+              'assets/brands/$title.png',
+              height: 34,
+              fit: BoxFit.contain,
             ),
           ),
         ),
@@ -1987,89 +2088,6 @@ Widget build(BuildContext context) {
           ),
         ),
       ],
-    ),
-  );
-}
-Color get _brandColor {
-  switch (title) {
-    case "Xbox":
-      return const Color(0xFF107C10);
-    case "Times Prime":
-      return const Color(0xFF5E35B1);
-    case "Zoomin":
-      return const Color(0xFFE53935);
-    default:
-      return const Color(0xFF4C6EF5);
+    );
   }
-}
-
-}
-// ======== Discount Title ==================
-class _DiscountTile extends StatelessWidget {
-  final String title;
-  final String cashback;
-
-  const _DiscountTile(this.title, this.cashback);
-
-  @override
-Widget build(BuildContext context) {
-  return Column(
-    children: [
-      Expanded(
-        child: Container(
-          decoration: BoxDecoration(
-            color: _brandColor,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(color: Colors.black26, blurRadius: 6),
-            ],
-          ),
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-      const SizedBox(height: 6),
-      Text(
-        cashback,
-        style: const TextStyle(
-          color: Color(0xFF1DB954),
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ],
-  );
-}
-Color get _brandColor {
-  switch (title) {
-    case "Apple":
-      return const Color(0xFF0A2540);
-    case "Play Store":
-      return const Color(0xFF1E8E3E);
-    case "Game Pass":
-      return const Color(0xFF107C10);
-    case "Amazon Prime":
-      return const Color(0xFF1F3C4F);
-    case "McDonald's":
-      return const Color(0xFFFFBC0D);
-    case "Westside":
-      return const Color(0xFF1C1C1C);
-    case "AJIO":
-      return const Color(0xFFB0006D);
-    case "Tata CLiQ":
-      return const Color(0xFF6A1B9A);
-    case "Book My Show":
-      return const Color(0xFFC62828);
-    default:
-      return const Color(0xFF4C6EF5);
-  }
-}
-
 }
