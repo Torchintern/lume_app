@@ -28,6 +28,8 @@ final List<CashbackCategory> cashbackCategories = [
       BrandCashback(logo: "assets/brands/valorant.png", cashback: "10% back"),
       BrandCashback(logo: "assets/brands/steam.png", cashback: "8% back"),
       BrandCashback(logo: "assets/brands/gamepass.png", cashback: "8% back"),
+      BrandCashback(logo: "assets/brands/apple.png", cashback: "15% back"),
+      BrandCashback(logo: "assets/brands/playstore.png", cashback: "5% back"),
     ],
   ),
 
@@ -73,7 +75,6 @@ final List<CashbackCategory> cashbackCategories = [
     brands: [
       BrandCashback(logo: "assets/brands/croma.png", cashback: "6% back"),
       BrandCashback(logo: "assets/brands/reliance.png", cashback: "5% back"),
-      BrandCashback(logo: "assets/brands/apple.png", cashback: "15% back"),
     ],
   ),
 
@@ -115,7 +116,23 @@ final List<BrandCashback> trendingBrands = [
     cashback: "15% back",
   ),
   BrandCashback(
+    logo: "assets/brands/playstore.png",
+    cashback: "5% back",
+  ),
+  BrandCashback(
     logo: "assets/brands/bookmyshow.png",
     cashback: "10% back",
+  ),
+  BrandCashback(
+    logo: "assets/brands/flipkart.png",
+    cashback: "12% back",
+  ),
+  BrandCashback(
+    logo: "assets/brands/netflix.png",
+    cashback: "5% back",
+  ),
+  BrandCashback(
+    logo: "assets/brands/prime.png",
+    cashback: "6% back",
   ),
 ];

@@ -10,6 +10,8 @@ class PaymentAmountScreen extends StatefulWidget {
   final String payee;        // UPI ID or mobile
   final String payeeName;    // detected name
   final bool isWalletTransfer;
+  final String? profileImage;
+
 
   const PaymentAmountScreen({
     super.key,
@@ -17,6 +19,7 @@ class PaymentAmountScreen extends StatefulWidget {
     required this.payee,
     required this.payeeName,
     required this.isWalletTransfer,
+    this.profileImage, 
   });
 
   @override
@@ -245,7 +248,50 @@ class _PaymentAmountScreenState
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 10),
+
+                    const SizedBox(height: 14),
+
+                    // ================= PAYEE PROFILE =================
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: widget.isWalletTransfer
+                              ? Colors.green
+                              : Colors.blue,
+                          width: 2,
+                        ),
+                      ),
+                      child: CircleAvatar(
+                        radius: 32,
+                        backgroundColor: Colors.grey.shade200,
+                        backgroundImage:
+                            (widget.profileImage != null &&
+                                    widget.profileImage!.isNotEmpty)
+                                ? NetworkImage(widget.profileImage!)
+                                : null,
+                        child: (widget.profileImage == null ||
+                                widget.profileImage!.isEmpty)
+                            ? Text(
+                                widget.payeeName.isNotEmpty
+                                    ? widget.payeeName
+                                        .trim()
+                                        .substring(0, 1)
+                                        .toUpperCase()
+                                    : "U",
+                                style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
                     Text(
                       widget.payeeName,
                       style: const TextStyle(
@@ -253,6 +299,7 @@ class _PaymentAmountScreenState
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+
                     const SizedBox(height: 4),
                     Text(
                       widget.payee,

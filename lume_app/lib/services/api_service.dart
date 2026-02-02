@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = "http://192.168.0.3:5000/api";
+  static const String baseUrl = "http://192.168.0.4:5000/api";
   // "http://10.0.2.2:5000/api"
   static const Map<String, String> headers = {
     "Content-Type": "application/json",
@@ -140,6 +140,8 @@ class ApiService {
     "pan_verified": data["pan_verified"],
     "wallet_status": data["wallet_status"],
     "kyc_completion_percent": data["kyc_completion_percent"] ?? 0,
+    "total_spent": data["total_spent"] ?? 0,
+    "tier": data["tier"] ?? "silver",
   };
 }
 
@@ -327,6 +329,20 @@ static Future<List<dynamic>> searchLumeUserByMobile(String query) async {
   }
   return [];
 }
+
+// ============= get recent payees ==========
+static Future<List<dynamic>> getRecentPayees(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/payments/recent/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+    return data is List ? data : [];
+  }
+  return [];
+}
+
 
 // ========================= Wallet - wallet transfer ============================
 static Future<bool> walletToWalletTransfer({

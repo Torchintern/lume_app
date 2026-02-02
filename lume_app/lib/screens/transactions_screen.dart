@@ -21,6 +21,14 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   List<dynamic> allTransactions = [];
   List<dynamic> filteredTransactions = [];
   bool loading = true;
+  // ================= SEARCH STATE =================
+  final TextEditingController _walletSearchController =
+      TextEditingController();
+  final TextEditingController _cardSearchController =
+      TextEditingController();
+
+  String walletSearchQuery = "";
+  String cardSearchQuery = "";
 
   // ================= FILTER STATE =================
   DateTime? fromMonth;
@@ -56,8 +64,10 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  _tabController.dispose();
+  _walletSearchController.dispose();
+  _cardSearchController.dispose();
+  super.dispose();
   }
 
   // ================= SORT + GROUP =================
@@ -102,42 +112,64 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   // ================= FILTER LOGIC =================
-  void _applyFilters() {
-    List<dynamic> temp = List.from(allTransactions);
+ void _applyFilters({bool isWallet = true}) {
+  List<dynamic> temp = List.from(allTransactions);
 
-    if (fromMonth != null && toMonth != null) {
-      final startMonth =
-          DateTime(fromMonth!.year, fromMonth!.month);
-      final endMonth =
-          DateTime(toMonth!.year, toMonth!.month);
+  // ===== DATE FILTER (DAY LEVEL) =====
+  if (fromMonth != null && toMonth != null) {
+    final startDate = DateTime(
+      fromMonth!.year,
+      fromMonth!.month,
+      fromMonth!.day,
+    );
 
-      temp = temp.where((t) {
-        final d = DateTime.parse(t["created_at"]);
-        final txMonth = DateTime(d.year, d.month);
+    final endDate = DateTime(
+      toMonth!.year,
+      toMonth!.month,
+      toMonth!.day,
+      23,
+      59,
+      59,
+    );
 
-        return !txMonth.isBefore(startMonth) &&
-            !txMonth.isAfter(endMonth);
-      }).toList();
-    }
-
-    if (statusFilter != 'All') {
-      temp = temp.where((t) =>
-          t["status"].toString().toLowerCase() ==
-          statusFilter.toLowerCase()).toList();
-    }
-
-    setState(() {
-      filteredTransactions = temp;
-    });
+    temp = temp.where((t) {
+      final d = DateTime.parse(t["created_at"]);
+      return !d.isBefore(startDate) && !d.isAfter(endDate);
+    }).toList();
   }
+
+  // ===== STATUS FILTER =====
+  if (statusFilter != 'All') {
+    temp = temp.where((t) =>
+        t["status"].toString().toLowerCase() ==
+        statusFilter.toLowerCase()).toList();
+  }
+
+  // ===== SEARCH FILTER =====
+  final q = (isWallet ? walletSearchQuery : cardSearchQuery)
+      .toLowerCase();
+
+  if (q.isNotEmpty) {
+    temp = temp.where((t) {
+      return t.values.any(
+        (v) => v.toString().toLowerCase().contains(q),
+      );
+    }).toList();
+  }
+
+  setState(() {
+    filteredTransactions = temp;
+  });
+}
+
 
   // ================= FILTER HEADER (UPDATED) =================
   Widget _filterHeader() {
     final String timeLabel =
-        (fromMonth != null && toMonth != null)
-            ? "${_monthShort(fromMonth!.month)} ${fromMonth!.year} - "
-              "${_monthShort(toMonth!.month)} ${toMonth!.year}"
-            : "Time";
+      (fromMonth != null && toMonth != null)
+          ? "${fromMonth!.day} ${_monthShort(fromMonth!.month)} ${fromMonth!.year} - "
+            "${toMonth!.day} ${_monthShort(toMonth!.month)} ${toMonth!.year}"
+          : "Time";
 
     final String statusLabel =
         statusFilter == 'All' ? "Status" : _capitalize(statusFilter);
@@ -156,6 +188,29 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       ),
     );
   }
+  Widget _searchBar({
+  required TextEditingController controller,
+  required ValueChanged<String> onChanged,
+}) {
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    child: TextField(
+      controller: controller,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        hintText: "Search by amount, reference, status...",
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(vertical: 0),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    ),
+  );
+}
 
   Widget _filterChip(String label, VoidCallback onTap,
       {bool isActive = false}) {
@@ -209,9 +264,16 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         controller: _tabController,
         children: [
           Column(
-            children: [
-              _filterHeader(),
-              Expanded(
+          children: [
+            _filterHeader(),
+            _searchBar(
+              controller: _walletSearchController,
+              onChanged: (v) {
+                walletSearchQuery = v;
+                _applyFilters(isWallet: true);
+              },
+            ),
+            Expanded(
                 child: loading
                     ? const Center(child: CircularProgressIndicator())
                     : filteredTransactions.isEmpty
@@ -227,9 +289,16 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             ],
           ),
           Column(
-            children: [
-              _filterHeader(),
-              const Expanded(
+          children: [
+            _filterHeader(),
+            _searchBar(
+              controller: _cardSearchController,
+              onChanged: (v) {
+                cardSearchQuery = v;
+                _applyFilters(isWallet: false);
+              },
+            ),
+            const Expanded(
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -311,7 +380,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    "Select range",
+                    "Select date range",
                     style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold),

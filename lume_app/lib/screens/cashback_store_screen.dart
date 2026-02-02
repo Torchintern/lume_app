@@ -257,32 +257,36 @@ class _CashbackStoreScreenState extends State<CashbackStoreScreen>
             ),
 
             SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  const SizedBox(height: 12),
-                  const Text(
-                    "Cashback Store",
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+
+                // Cashback Store Banner Image
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Image.asset(
+                    "assets/images/cashbackstore.png", 
+                    fit: BoxFit.contain,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: _openHowItWorksSheet,
+                  child: const Text(
+                    "How does it work?",
                     style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF4C6EF5),
+                      decoration: TextDecoration.underline,
+                      color: Colors.grey,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  GestureDetector(
-                    onTap: _openHowItWorksSheet,
-                    child: const Text(
-                      "How does it work?",
-                      style: TextStyle(
-                        decoration: TextDecoration.underline,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
+                ),
+
+                const SizedBox(height: 24),
+              ],
             ),
+          ),
+
 
             SliverToBoxAdapter(
               child: NotificationListener<UserScrollNotification>(
@@ -317,6 +321,11 @@ class _CashbackStoreScreenState extends State<CashbackStoreScreen>
                     const PromoBrand(
                       logo: "assets/brands/steam.png",
                       offer: "8% cashback",
+                      bgColor: Color(0xFFE6F0FF), 
+                    ),
+                    const PromoBrand(
+                      logo: "assets/brands/playstore.png",
+                      offer: "5% cashback",
                       bgColor: Color(0xFFE6F0FF), 
                     ),
 
@@ -420,29 +429,40 @@ class _SearchHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
       color: const Color(0xFFF7F8FC),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Container(
-        height: 50,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(color: Colors.black12, blurRadius: 6),
-          ],
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.search, color: Colors.grey),
-            SizedBox(width: 10),
-            Text(
-              "Search by brand or category",
-              style: TextStyle(color: Colors.grey),
-            ),
-          ],
+      child: GestureDetector(
+        onTap: () {
+          showSearch(
+            context: context,
+            delegate: _CashbackSearchDelegate(),
+          );
+        },
+        child: Container(
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(color: Colors.black12, blurRadius: 6),
+            ],
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.search, color: Colors.grey),
+              SizedBox(width: 10),
+              Text(
+                "Search by brand or category",
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -451,6 +471,7 @@ class _SearchHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_) => false;
 }
+
 
 // ================= STICKY CATEGORIES =================
 class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
@@ -635,3 +656,117 @@ class _HowStep extends StatelessWidget {
     );
   }
 }
+class _CashbackSearchDelegate extends SearchDelegate {
+  @override
+  String get searchFieldLabel => "Search brands or categories";
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
+      if (query.isNotEmpty)
+        IconButton(
+          icon: const Icon(Icons.clear),
+          onPressed: () => query = "",
+        ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return _buildResults(context);
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    return _buildResults(context);
+  }
+  
+  Widget _buildResults(BuildContext context) {
+    final q = query.toLowerCase();
+
+    final allBrands = cashbackCategories
+    .expand((c) => c.brands)
+    .toList();
+
+  final filteredBrands = allBrands.where((b) {
+    return b.logo.toLowerCase().contains(q);
+  }).toList();
+
+    final filteredCategories = cashbackCategories.where((c) {
+      return c.title.toLowerCase().contains(q);
+    }).toList();
+
+    if (filteredBrands.isEmpty && filteredCategories.isEmpty) {
+      return const Center(child: Text("No results found"));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // ===== Categories =====
+        if (filteredCategories.isNotEmpty) ...[
+          const Text(
+            "Categories",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          ...filteredCategories.map(
+            (c) => ListTile(
+              leading: CircleAvatar(
+                backgroundColor: const Color(0xFFE8ECFF),
+                child: Icon(c.icon, color: const Color(0xFF4C6EF5)),
+              ),
+              title: Text(c.title),
+              onTap: () {
+                close(context, null);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CategoryCashbackScreen(
+                      title: c.title,
+                      icon: c.icon,
+                      brands: c.brands,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+
+        // ===== Brands =====
+        if (filteredBrands.isNotEmpty) ...[
+          const Text(
+            "Brands",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: filteredBrands.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 14,
+              childAspectRatio: 0.9,
+            ),
+            itemBuilder: (_, i) {
+              return BrandCashbackCard(brand: filteredBrands[i]);
+            },
+          ),
+        ],
+      ],
+    );
+  }
+}
+

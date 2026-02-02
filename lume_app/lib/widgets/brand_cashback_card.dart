@@ -22,7 +22,8 @@ class BrandCashbackCard extends StatelessWidget {
     if (logo.contains('valorant')) return const Color(0xFF1C1C1C);
     if (logo.contains('steam')) return const Color(0xFF171A21);
     if (logo.contains('gamepass')) return Colors.white;
-
+    if (logo.contains('apple')) return Colors.white;
+    if (logo.contains('playstore')) return Colors.white;
     // Food
     if (logo.contains('zomato')) return const Color(0xFFE23744);
     if (logo.contains('swiggy')) return Colors.white;
@@ -42,7 +43,7 @@ class BrandCashbackCard extends StatelessWidget {
     // Electronics
     if (logo.contains('croma')) return Colors.white;
     if (logo.contains('reliance')) return Colors.white;
-    if (logo.contains('apple')) return Colors.white;
+    
 
     // Fashion
     if (logo.contains('jackjones')) return Colors.white;

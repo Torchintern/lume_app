@@ -220,7 +220,7 @@ def upload_profile_image():
 
     conn = get_db_connection()
     c = conn.cursor()
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
 
     c.execute("""
         UPDATE registered_students
@@ -231,7 +231,7 @@ def upload_profile_image():
     c.close()
     conn.close()
 
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
     return {"image_url": image_url}, 200
 
 
@@ -256,6 +256,8 @@ def student_details(reg_id):
         rs.aadhaar_verified,
         rs.pan_verified,
         rs.kyc_completion_percent,
+        rs.tier,
+        rs.total_spent AS total_spent,
         w.status AS wallet_status
         FROM registered_students rs
         JOIN students s ON rs.student_id = s.id
@@ -268,6 +270,60 @@ def student_details(reg_id):
     conn.close()
 
     return jsonify(data), 200
+
+# ================== Get Recent Payees ==============
+@app.route("/api/payments/recent/<int:reg_id>", methods=["GET"])
+def get_recent_payments(reg_id):
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+
+    cur.execute("""
+        SELECT
+            COALESCE(
+                wt.counterparty_name,
+                s.full_name,
+                wt.receiver_upi_id
+            ) AS name,
+
+            wt.receiver_upi_id AS identifier,
+
+            CASE
+                WHEN wt.receiver_upi_id LIKE '%%@lumepay' THEN 1
+                ELSE 0
+            END AS isWallet,
+
+            rs.profile_image
+        FROM wallet_transactions wt
+
+        JOIN (
+            SELECT
+                receiver_upi_id,
+                MAX(created_at) AS last_txn
+            FROM wallet_transactions
+            WHERE
+                sender_reg_id = %s
+                AND status = 'success'
+                AND receiver_upi_id IS NOT NULL
+            GROUP BY receiver_upi_id
+        ) latest
+          ON latest.receiver_upi_id = wt.receiver_upi_id
+         AND latest.last_txn = wt.created_at
+
+        LEFT JOIN registered_students rs
+          ON wt.receiver_reg_id = rs.id
+        LEFT JOIN students s
+          ON rs.student_id = s.id
+
+        ORDER BY wt.created_at DESC
+        LIMIT 8
+    """, (reg_id,))
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify(rows), 200
+
 
 # ================= AADHAAR KYC (SEND + VERIFY OTP) =================
 @app.route("/api/kyc/aadhaar", methods=["POST"])
@@ -690,6 +746,7 @@ def wallet_to_wallet_transfer():
             "wallet",
             receiver["full_name"]
         )
+        update_user_tier(conn, c, sender_reg_id)
 
         conn.commit()
         return {"message": "TRANSFER_SUCCESS"}, 200
@@ -844,6 +901,7 @@ def wallet_to_upi_payment():
                 "upi",
                 upi_name
             )
+        update_user_tier(conn, c, sender_id)
 
         conn.commit()
         return {"message": "UPI_PAYMENT_SUCCESS"}, 200
@@ -964,7 +1022,7 @@ def wallet_to_wallet_transfer_internal(sender_id, receiver_id, receiver_upi, amo
             "transfer",
             "wallet"
         )
-
+        update_user_tier(conn, c, sender_id)
         conn.commit()
         return {"message": "TRANSFER_SUCCESS"}, 200
 
@@ -1083,6 +1141,7 @@ def _log_txn(
         txn_type,
         payment_method
     ))
+
 
 # ================= TRANSACTION HISTORY =================
 @app.route("/api/transactions/<int:reg_id>", methods=["GET"])
@@ -1754,6 +1813,8 @@ def verify_add_money():
             SET status='success', failure_reason=NULL
             WHERE id=%s
         """, (txn_id,))
+        update_user_tier(conn, c, txn["sender_reg_id"])
+
 
         #  Save card ONLY if checkbox selected
         if d.get("save_card") is True:
@@ -1884,6 +1945,35 @@ def auto_cancel_expired_pending_transactions():
     finally:
         c.close()
         conn.close()
+        
+# ==== Tier =====
+def update_user_tier(conn, c, reg_id):
+    c.execute("""
+        SELECT IFNULL(SUM(CAST(amount AS DECIMAL(10,2))), 0) AS total
+        FROM wallet_transactions
+        WHERE sender_reg_id = %s
+          AND status = 'success'
+          AND (
+                txn_type IN ('transfer', 'upi')
+          )
+    """, (reg_id,))
+
+    total = float(c.fetchone()["total"] or 0)
+
+    if total >= 75000:
+        tier = "platinum"
+    elif total >= 25000:
+        tier = "gold"
+    else:
+        tier = "silver"
+
+    c.execute("""
+        UPDATE registered_students
+        SET total_spent=%s,
+            tier=%s
+        WHERE id=%s
+    """, (total, tier, reg_id))
+
 
 #========================= RUN=========================
 

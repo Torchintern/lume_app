@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class BrandVouchersScreen extends StatelessWidget {
+class BrandVouchersScreen extends StatefulWidget {
   const BrandVouchersScreen({super.key});
 
   static final Map<String, List<_Voucher>> vouchers = {
@@ -34,6 +34,7 @@ class BrandVouchersScreen extends StatelessWidget {
     "P": [
       _Voucher("assets/brands/pvr.png", "15% back"),
       _Voucher("assets/brands/prime.png", "6% back"),
+      _Voucher("assets/brands/playstore.png", "5% back"),
     ],
     "R": [
       _Voucher("assets/brands/reliance.png", "5% back"),
@@ -61,6 +62,11 @@ class BrandVouchersScreen extends StatelessWidget {
   };
 
   @override
+  State<BrandVouchersScreen> createState() => _BrandVouchersScreenState();
+}
+
+class _BrandVouchersScreenState extends State<BrandVouchersScreen> {
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
@@ -71,10 +77,17 @@ class BrandVouchersScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(Icons.search, color: Colors.black),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search, color: Colors.black),
+            onPressed: () {
+              showSearch(
+                context: context,
+                delegate: _VoucherSearchDelegate(
+                  allVouchers: BrandVouchersScreen.vouchers,
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -99,7 +112,7 @@ class BrandVouchersScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          ...vouchers.entries.map(
+          ...BrandVouchersScreen.vouchers.entries.map(
             (entry) => _VoucherSection(
               letter: entry.key,
               vouchers: entry.value,
@@ -107,6 +120,73 @@ class BrandVouchersScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ================= SEARCH DELEGATE =================
+class _VoucherSearchDelegate extends SearchDelegate {
+  final Map<String, List<_Voucher>> allVouchers;
+
+  _VoucherSearchDelegate({required this.allVouchers});
+
+  @override
+  String get searchFieldLabel => "Search brand or letter";
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
+      if (query.isNotEmpty)
+        IconButton(
+          icon: const Icon(Icons.clear),
+          onPressed: () => query = "",
+        ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _buildResults();
+
+  @override
+  Widget buildResults(BuildContext context) => _buildResults();
+
+  Widget _buildResults() {
+    final q = query.toLowerCase();
+    final Map<String, List<_Voucher>> filtered = {};
+
+    allVouchers.forEach((letter, list) {
+      if (letter.toLowerCase().startsWith(q)) {
+        filtered[letter] = list;
+      } else {
+        final matches = list
+            .where((v) => v.logo.toLowerCase().contains(q))
+            .toList();
+        if (matches.isNotEmpty) filtered[letter] = matches;
+      }
+    });
+
+    if (filtered.isEmpty) {
+      return const Center(child: Text("No vouchers found"));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: filtered.entries
+          .map(
+            (entry) => _VoucherSection(
+              letter: entry.key,
+              vouchers: entry.value,
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -160,54 +240,39 @@ class _VoucherTile extends StatelessWidget {
 
   const _VoucherTile({required this.voucher});
 
- Color _backgroundFromLogo() {
-  final logo = voucher.logo.toLowerCase();
+  Color _backgroundFromLogo() {
+    final logo = voucher.logo.toLowerCase();
 
-  // Shopping
-  if (logo.contains('amazon')) return Colors.white;
-  if (logo.contains('flipkart')) return const Color(0xFF2874F0);
-  if (logo.contains('armani')) return Colors.white;
+    if (logo.contains('amazon')) return Colors.white;
+    if (logo.contains('flipkart')) return const Color(0xFF2874F0);
+    if (logo.contains('armani')) return Colors.white;
 
-  // Gaming
-  if (logo.contains('valorant')) return const Color(0xFF1C1C1C);
-  if (logo.contains('steam')) return const Color(0xFF171A21);
-  if (logo.contains('gamepass')) return Colors.white;
+    if (logo.contains('valorant')) return const Color(0xFF1C1C1C);
+    if (logo.contains('steam')) return const Color(0xFF171A21);
+    if (logo.contains('gamepass')) return Colors.white;
+    if (logo.contains('apple')) return Colors.white;
+    if (logo.contains('playstore')) return Colors.white;
 
-  // Food
-  if (logo.contains('zomato')) return const Color(0xFFE23744);
-  if (logo.contains('swiggy')) return Colors.white;
-  if (logo.contains('mcdonalds')) return const Color(0xFF000000);
+    if (logo.contains('zomato')) return const Color(0xFFE23744);
+    if (logo.contains('swiggy')) return Colors.white;
+    if (logo.contains('mcdonalds')) return const Color(0xFF000000);
 
-  // Movies
-  if (logo.contains('bookmyshow')) return const Color(0xFFC62828);
-  if (logo.contains('pvr')) return Colors.black;
+    if (logo.contains('bookmyshow')) return const Color(0xFFC62828);
+    if (logo.contains('pvr')) return Colors.black;
 
-  // Self-care
-  if (logo.contains('urbancompany')) return Colors.white;
+    if (logo.contains('urbancompany')) return Colors.white;
+    if (logo.contains('mmt')) return const Color(0xFFE53935);
+    if (logo.contains('goibibo')) return Colors.white;
+    if (logo.contains('croma')) return Colors.white;
+    if (logo.contains('reliance')) return Colors.white;
+    if (logo.contains('jackjones')) return Colors.white;
+    if (logo.contains('wildcraft')) return Colors.white;
+    if (logo.contains('netflix')) return Colors.black;
+    if (logo.contains('spotify')) return const Color(0xFF1DB954);
+    if (logo.contains('prime')) return Colors.white;
 
-  // Travel
-  if (logo.contains('mmt')) return const Color(0xFFE53935);
-  if (logo.contains('goibibo')) return Colors.white;
-
-  // Electronics
-  if (logo.contains('croma')) return Colors.white;
-  if (logo.contains('reliance')) return Colors.white;
-  if (logo.contains('apple')) return Colors.white;
-
-  // Fashion
-  if (logo.contains('jackjones')) return Colors.white;
-  if (logo.contains('wildcraft')) return Colors.white;
-
-  // Subscriptions
-  if (logo.contains('netflix')) return Colors.black;
-  if (logo.contains('spotify')) return const Color(0xFF1DB954);
-  if (logo.contains('prime')) return Colors.white;
-
-  // Default fallback
-  return const Color(0xFF2C2C2C);
-}
-
-
+    return const Color(0xFF2C2C2C);
+  }
 
   @override
   Widget build(BuildContext context) {

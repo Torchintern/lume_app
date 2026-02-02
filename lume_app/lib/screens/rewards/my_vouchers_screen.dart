@@ -34,7 +34,7 @@ class MyVouchersScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               itemCount: vouchers.length,
               itemBuilder: (_, i) {
-                return Container(); // future voucher card
+                return Container(); 
               },
             ),
     );

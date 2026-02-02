@@ -57,6 +57,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? userName;
   String? profileImageUrl;
   late final PageController _pageController;
+  bool upiCopied = false;
+  double totalSpent = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  
 
   // ================= USER HELPERS =================
   String get initials {
@@ -66,6 +70,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ? "${parts[0][0]}${parts[1][0]}".toUpperCase()
         : widget.fullName.substring(0, 2).toUpperCase();
   }
+  String get computedTier {
+  if (totalSpent >= 75000) return "platinum";
+  if (totalSpent >= 25000) return "gold";
+  return "silver";
+}
+
 Future<void> logout() async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove("session_reg_id");
@@ -76,6 +86,92 @@ Future<void> logout() async {
   Navigator.of(context).pushAndRemoveUntil(
     MaterialPageRoute(builder: (_) => const LoginScreen()),
     (route) => false,
+  );
+}
+Widget buildTopTierStatus() {
+  final tier = computedTier;
+
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: tier == "gold"
+              ? const Color(0xFFFFF8E1)
+              : tier == "platinum"
+                  ? const Color(0xFFECEFF1)
+                  : const Color(0xFFF1F3F5),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              tier == "platinum"
+                  ? "💎"
+                  : tier == "gold"
+                      ? "🥇"
+                      : "🥈",
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              tier[0].toUpperCase() + tier.substring(1),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: tierColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 4),
+      SizedBox(
+        width: 70,
+        child: LinearProgressIndicator(
+          minHeight: 4,
+          value: tierProgress.clamp(0.02, 1.0),
+          backgroundColor: Colors.grey.shade300,
+          valueColor: AlwaysStoppedAnimation(tierColor),
+        ),
+      ),
+    ],
+  );
+}
+Widget buildKycStatusBadge() {
+  final bool verified = isKycCompleted;
+
+  return Container(
+    margin: const EdgeInsets.only(top: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: verified ? Colors.green.shade50 : Colors.red.shade50,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(
+        color: verified ? Colors.green : Colors.red,
+      ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          verified ? Icons.check_circle : Icons.cancel,
+          size: 14,
+          color: verified ? Colors.green : Colors.red,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          verified ? "KYC Verified" : "KYC Not Verified",
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: verified ? Colors.green : Colors.red,
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -166,6 +262,20 @@ Future<void> _pickProfileImage() async {
   );
 }
 
+void _copyUpiId(String upi) async {
+  await Clipboard.setData(ClipboardData(text: upi));
+
+  setState(() {
+    upiCopied = true;
+  });
+
+  Future.delayed(const Duration(seconds: 2), () {
+    if (!mounted) return;
+    setState(() {
+      upiCopied = false;
+    });
+  });
+}
 
 Future<void> _loadUnreadCount() async {
   try {
@@ -238,23 +348,53 @@ Future<void> _refreshStudentState() async {
     final data = await ApiService.getStudentDetails(widget.regId);
     if (!mounted) return;
 
+    final double spent = double.tryParse(
+      (data["total_spent"] ?? data["totalSpent"] ?? 0).toString(),
+    ) ?? 0.0;
+
+
+    final double percent =
+        double.tryParse(data["kyc_completion_percent"].toString()) ?? 0.0;
+
     setState(() {
       aadhaarVerified = data["aadhaar_verified"] == 1;
       panVerified = data["pan_verified"] == 1;
-
       walletStatus = data["wallet_status"] ?? "inactive";
       upiId = data["upi_id"];
-       profileImageUrl = data["profile_image"];
+      profileImageUrl = data["profile_image"];
 
-      final percent =
-          (data["kyc_completion_percent"] ?? 0).toDouble();
+      totalSpent = spent;     
+
       kycProgress = percent / 100;
       isKycCompleted = kycProgress == 1.0;
     });
-  } catch (_) {
-    // silent fail
-  }
+  } catch (_) {}
 }
+
+
+
+double get tierProgress {
+  if (totalSpent >= 75000) return 1.0;
+
+  if (totalSpent >= 25000) {
+    return ((totalSpent - 25000) / 50000).clamp(0.0, 1.0);
+  }
+  return (totalSpent / 25000).clamp(0.0, 1.0);
+}
+
+IconData get tierIcon {
+  if (computedTier == "platinum") return Icons.diamond;
+  if (computedTier == "gold") return Icons.emoji_events;
+  return Icons.star;
+}
+
+Color get tierColor {
+  if (computedTier == "platinum") return Colors.blueGrey;
+  if (computedTier == "gold") return Colors.amber;
+  return Colors.grey;
+}
+
+
 Widget buildUserAvatar(double radius) {
   if (profileImageUrl != null && profileImageUrl!.isNotEmpty) {
     return CircleAvatar(
@@ -284,11 +424,9 @@ Widget buildUserAvatar(double radius) {
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-  onWillPop: () async {
-    return false; 
-  },
+  onWillPop: () async => false,
   child: Scaffold(
-
+    key: _scaffoldKey,
       backgroundColor: const Color(0xFFF7F8FC),
 
       // ================= DRAWER =================
@@ -296,13 +434,13 @@ Widget buildUserAvatar(double radius) {
         child: SafeArea(
           child: Column(
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               Stack(
                 alignment: Alignment.bottomRight,
                 children: [
                   GestureDetector(
                     onTap: _pickProfileImage,
-                    child: buildUserAvatar(22),
+                    child: buildUserAvatar(24),
                   ),
                   Positioned(
                     right: 0,
@@ -332,7 +470,9 @@ Widget buildUserAvatar(double radius) {
                   ),
                 ],
               ),
+
               const SizedBox(height: 10),
+
               Text(
                 userName ?? widget.fullName,
                 style: const TextStyle(
@@ -363,9 +503,104 @@ Widget buildUserAvatar(double radius) {
                   ),
                 ),
               )
-            : Text(
-                upiId!,
-                style: const TextStyle(color: Colors.grey),
+            :Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // ---- UPI ROW ----
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        upiId!,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () => _copyUpiId(upiId!),
+                        child: Icon(
+                          upiCopied ? Icons.check_circle : Icons.copy,
+                          size: 16,
+                          color: upiCopied ? Colors.green : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  // ---- TIER BADGE ----
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: computedTier == "gold"
+                          ? const Color(0xFFFFF8E1)
+                          : computedTier == "platinum"
+                              ? const Color(0xFFECEFF1)
+                              : const Color(0xFFF1F3F5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                       Text(
+                          computedTier == "platinum"
+                              ? "💎"
+                              : computedTier == "gold"
+                                  ? "🥇"
+                                  : "🥈",
+                          style: const TextStyle(fontSize: 12),
+                        ),
+
+                        const SizedBox(width: 6),
+                        Text(
+                          "${computedTier[0].toUpperCase()}${computedTier.substring(1)} Member",
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: computedTier == "gold"
+                                ? const Color(0xFFFFC107)
+                                : computedTier == "platinum"
+                                    ? const Color(0xFF616161)
+                                    : const Color(0xFF9E9E9E),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+
+                  // ---- TIER PROGRESS BAR ----
+                  SizedBox(
+                    width: 160, 
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                      minHeight: 6,
+                      value: tierProgress.clamp(0.02, 1.0),
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: AlwaysStoppedAnimation(
+                        tierProgress == 0 ? Colors.grey.shade400 : tierColor,
+                      ),
+                    ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+
+                 if (totalSpent < 75000)
+                  Text(
+                    totalSpent < 25000
+                        ? "₹${(25000 - totalSpent).round()} to reach Gold"
+                        : "₹${(75000 - totalSpent).round()} to reach Platinum",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  buildKycStatusBadge(),
+                ],
               ),
 
               const Divider(height: 40),
@@ -425,57 +660,73 @@ Widget buildUserAvatar(double radius) {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ================= TOP ROW =================
-              Row(
+              SizedBox(
+              height: 40,
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Builder(
-                    builder: (context) => GestureDetector(
-                      onTap: () => Scaffold.of(context).openDrawer(),
-                      child: buildUserAvatar(22),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Builder(
+                      builder: (context) => GestureDetector(
+                        onTap: () async {
+                          _scaffoldKey.currentState?.closeDrawer();
+                          await _refreshStudentState();
+                          if (!mounted) return;
+                          _scaffoldKey.currentState?.openDrawer();
+                        },
+                        child: buildUserAvatar(22),
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  Stack(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.notifications_none, size: 26),
-                        onPressed: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const NotificationsScreen(),
-                            ),
-                          );
-                          _loadUnreadCount();
-                        },
-                      ),
-                      if (unreadCount > 0)
-                        Positioned(
-                          right: 6,
-                          top: 6,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              unreadCount > 9 ? "9+" : unreadCount.toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+
+                  buildTopTierStatus(),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Stack(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.notifications_none, size: 26),
+                          onPressed: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const NotificationsScreen(),
+                              ),
+                            );
+                            _loadUnreadCount();
+                          },
+                        ),
+                        if (unreadCount > 0)
+                          Positioned(
+                            right: 6,
+                            top: 6,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Text(
+                                unreadCount > 9 ? "9+" : unreadCount.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
               ),
+            ),
 
               const SizedBox(height: 20),
 
@@ -483,11 +734,13 @@ Widget buildUserAvatar(double radius) {
               Expanded(
                 child: PageView(
                   controller: _pageController,
-                  onPageChanged: (index) {
+                  onPageChanged: (index) async {
                     setState(() {
                       currentIndex = index;
                     });
+                    await _refreshStudentState();
                   },
+
                   children: [
                     const Center(child: Text("Card Coming Soon")),
 
@@ -522,14 +775,18 @@ Widget buildUserAvatar(double radius) {
       bottomNavigationBar: SafeArea(
         child: BottomNavigationBar(
           currentIndex: currentIndex,
-         onTap: (i) {
-            setState(() => currentIndex = i);
-            _pageController.animateToPage(
-              i,
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOut,
-            );
-          },
+         onTap: (i) async {
+          setState(() => currentIndex = i);
+
+          await _pageController.animateToPage(
+            i,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOut,
+          );
+
+          await _refreshStudentState();
+        },
+
           selectedItemColor: const Color(0xFF4C6EF5),
           unselectedItemColor: Colors.grey,
           type: BottomNavigationBarType.fixed,
@@ -558,6 +815,62 @@ Widget buildUserAvatar(double radius) {
     );
   }
 }
+// ========= Tier Badge ===========
+class TierBadge extends StatelessWidget {
+  final String tier;
+
+  const TierBadge({super.key, required this.tier});
+
+  Color get _color {
+    switch (tier) {
+      case "gold":
+        return const Color(0xFFFFC107);
+      case "platinum":
+        return const Color(0xFF9E9E9E);
+      default:
+        return const Color(0xFFB0BEC5); 
+    }
+  }
+
+  String get _label =>
+      tier[0].toUpperCase() + tier.substring(1);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: _color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _color),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            tier == "platinum"
+                ? "💎"
+                : tier == "gold"
+                    ? "🥇"
+                    : "🥈",
+            style: const TextStyle(fontSize: 14),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            "$_label Tier",
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 
 // ================= PAY VIEW =================
 class _PayView extends StatefulWidget {
@@ -576,46 +889,108 @@ class _PayView extends StatefulWidget {
   @override
   State<_PayView> createState() => _PayViewState();
 }
-
-class _PayViewState extends State<_PayView> {
+class _PayViewState extends State<_PayView>
+    with SingleTickerProviderStateMixin {
   double balance = 0.0;
   bool loading = true;
   bool showBalance = false;
+  bool showScanner = false;
   final TextEditingController upiController = TextEditingController();
   List<dynamic> paySuggestions = [];
+  List<dynamic> recentPayees = [];
+  bool loadingRecents = true;
+
+  List<Map<String, dynamic>> dedupeRecentPayees(List<dynamic> list) {
+  final seen = <String>{};
+  final result = <Map<String, dynamic>>[];
+
+  for (final item in list) {
+    final identifier = item["identifier"]?.toString();
+    if (identifier == null) continue;
+
+    if (!seen.contains(identifier)) {
+      seen.add(identifier);
+      result.add(Map<String, dynamic>.from(item));
+    }
+  }
+
+  return result;
+}
+  bool asBool(dynamic v) {
+    if (v is bool) return v;
+    if (v is int) return v == 1;
+    return false;
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadBalance();
+     _startInnerAnimationLoop();
+     _loadRecentPayees();
+     _loadBalance();
+     upiController.addListener(() {
+    if (mounted) setState(() {});
+  });
   }
-bool isInternalUpi(String v) =>
-    v.toLowerCase().endsWith("@lumepay");
-
-bool isExternalUpi(String v) =>
-    v.contains("@") && !isInternalUpi(v);
-bool isMobile(String v) => RegExp(r'^[6-9]\d{9}$').hasMatch(v);
-bool isUpi(String v) => v.contains('@');
-
-void openPayment(Map to, bool isWallet) async {
-  final dashboardState =
-      context.findAncestorStateOfType<_DashboardScreenState>();
-
-  if (dashboardState == null ||
-    dashboardState.upiId == null ||
-    dashboardState.upiId!.isEmpty) {
-  showCreateUpiDialog(
-    context: context,
-    regId: widget.regId,
-    onSuccess: () {
-  if (dashboardState != null) {
-    dashboardState._refreshStudentState();
+  @override
+  void dispose() {
+    super.dispose();
   }
-},
 
-  );
-  return;
+  void _startInnerAnimationLoop() async {
+  while (mounted) {
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
+    setState(() => showScanner = true);
+
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
+    setState(() => showScanner = false);
+  }
 }
+Future<void> _loadRecentPayees() async {
+  try {
+    final data = await ApiService.getRecentPayees(widget.regId);
+    if (!mounted) return;
+
+   setState(() {
+    recentPayees = dedupeRecentPayees(data);
+    loadingRecents = false;
+  });
+
+  } catch (_) {
+    loadingRecents = false;
+  }
+}
+
+ 
+  bool isInternalUpi(String v) =>
+      v.toLowerCase().endsWith("@lumepay");
+
+  bool isExternalUpi(String v) =>
+      v.contains("@") && !isInternalUpi(v);
+  bool isMobile(String v) => RegExp(r'^[6-9]\d{9}$').hasMatch(v);
+  bool isUpi(String v) => v.contains('@');
+
+  void openPayment(Map to, bool isWallet) async {
+    final dashboardState =
+        context.findAncestorStateOfType<_DashboardScreenState>();
+
+    if (dashboardState == null || 
+      dashboardState.upiId == null ||
+      dashboardState.upiId!.isEmpty) {
+    showCreateUpiDialog(
+      context: context,
+      regId: widget.regId,
+      onSuccess: () {
+    if (dashboardState != null) {
+      dashboardState._refreshStudentState();
+    }
+  },
+
+    );
+    return;
+  }
   final result = await Navigator.push(
     context,
     MaterialPageRoute(
@@ -624,21 +999,27 @@ void openPayment(Map to, bool isWallet) async {
         payee: to["identifier"],
         payeeName: to["name"],
         isWalletTransfer: isWallet,
+        profileImage: to["profile_image"],
       ),
     ),
   );
 
-  if (result == true) {
-  upiController.clear();
-  paySuggestions.clear();
+  if (result == true || result == "success") {
+    upiController.clear();
+    paySuggestions.clear();
+    final dashboardState =
+        context.findAncestorStateOfType<_DashboardScreenState>();
+    if (dashboardState != null) {
+  await dashboardState.refreshWalletNow();
+  await dashboardState._refreshStudentState();
 
-  final dashboardState =
-      context.findAncestorStateOfType<_DashboardScreenState>();
-
-  await dashboardState?.refreshWalletNow();
-
-  setState(() {});
+  dashboardState.setState(() {});
 }
+
+  }    
+}
+Future<void> refreshBalance() async {
+  await _loadBalance();
 }
 
   Future<void> _loadBalance() async {
@@ -656,6 +1037,68 @@ void openPayment(Map to, bool isWallet) async {
         loading = false;
       });
     }
+  }
+    Future<void> _refreshBalanceSilently() async {
+    try {
+      final b = await ApiService.getWalletBalance(widget.regId);
+      if (!mounted) return;
+
+      setState(() {
+        balance = b; 
+      });
+    } catch (_) {
+    }
+  }
+  Widget buildScannerAnimation() {
+    return Container(
+      height: 130,
+      decoration: BoxDecoration(
+        color: const Color(0xFF4C6EF5),
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Scanner frame
+          Container(
+            height: 80,
+            width: 80,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white, width: 2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+
+          // Scanning line animation
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 900),
+            curve: Curves.easeInOut,
+            builder: (_, value, __) {
+              return Positioned(
+                top: 25 + (value * 40),
+                child: Container(
+                  width: 60,
+                  height: 2,
+                  color: Colors.white,
+                ),
+              );
+            },
+          ),
+
+          const Positioned(
+            bottom: 16,
+            child: Text(
+              "Scanning...",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -749,68 +1192,69 @@ Container(
 
       //EYE TOGGLE
       IconButton(
-        icon: Icon(
-          showBalance ? Icons.visibility_off : Icons.visibility,
-          color: Colors.grey.shade700,
-        ),
-        onPressed: () {
-          setState(() {
-            showBalance = !showBalance;
-          });
-        },
+      icon: Icon(
+        showBalance ? Icons.visibility_off : Icons.visibility,
+        color: Colors.grey.shade700,
       ),
+      onPressed: () {
+        setState(() {
+          showBalance = !showBalance;
+        });
+        _refreshBalanceSilently();
+      },
+    ),
     ],
   ),
 ),
 const SizedBox(height: 16),
 
 
-        // ================= TAP & PAY =================
+// ================= TAP & PAY =================
 GestureDetector(
   onTap: () async {
     final dashboardState =
         context.findAncestorStateOfType<_DashboardScreenState>();
 
-   if (dashboardState == null ||
-    dashboardState.upiId == null ||
-    dashboardState.upiId!.isEmpty) {
-  showCreateUpiDialog(
-    context: context,
-    regId: widget.regId,
-    onSuccess: () {
-  if (dashboardState != null) {
-    dashboardState._refreshStudentState();
-  }
-},
-
-  );
-  return;
-}
+    if (dashboardState == null ||
+        dashboardState.upiId == null ||
+        dashboardState.upiId!.isEmpty) {
+      showCreateUpiDialog(
+        context: context,
+        regId: widget.regId,
+        onSuccess: () {
+          dashboardState?._refreshStudentState();
+        },
+      );
+      return;
+    }
 
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => QrScannerScreen(
-  regId: widget.regId,
-),
+        builder: (_) => QrScannerScreen(regId: widget.regId),
       ),
     );
 
     if (result != null) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => PaymentAmountScreen(
-        regId: widget.regId,
-        payee: result,
-        payeeName: "QR Payment",
-        isWalletTransfer: false,
-      ),
-    ),
-  );
-}
+      final payResult = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaymentAmountScreen(
+            regId: widget.regId,
+            payee: result,
+            payeeName: "QR Payment",
+            isWalletTransfer: false,
+          ),
+        ),
+      );
 
+      if (payResult != null) {
+      await dashboardState.refreshWalletNow();
+      await dashboardState._refreshStudentState();
+    }
+    }
   },
+
   child: Container(
     height: 130,
     decoration: BoxDecoration(
@@ -818,26 +1262,23 @@ GestureDetector(
       borderRadius: BorderRadius.circular(26),
     ),
     child: Center(
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(40),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.touch_app, color: Color(0xFF4C6EF5)),
-            SizedBox(width: 8),
-            Text(
-              "Tap & Pay",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+      child: SizedBox(
+        height: 80,
+        width: 220,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween(begin: 0.95, end: 1.0).animate(animation),
+                child: child,
               ),
-            ),
-          ],
+            );
+          },
+          child: showScanner
+              ? _ScannerInner(key: const ValueKey("scanner"))
+              : _ScanPayInner(key: const ValueKey("scan")),
         ),
       ),
     ),
@@ -914,6 +1355,98 @@ Container(
           ),
         ],
       ),
+// ================= RECENT PAYEES =================
+if (!loadingRecents &&
+    recentPayees.isNotEmpty &&
+    upiController.text.isEmpty)
+  Padding(
+    padding: const EdgeInsets.only(top: 14),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Recent",
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        SizedBox(
+          height: 96,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: recentPayees.length,
+            itemBuilder: (_, i) {
+              final r = recentPayees[i];
+              final bool isWallet =
+                  r["isWallet"] == true || r["isWallet"] == 1;
+
+              final String name = (r["name"] ?? "U").toString();
+              final String? profileImage = r["profile_image"];
+
+              return GestureDetector(
+                onTap: () {
+                  openPayment(
+                  {
+                    "name": r["name"],
+                    "identifier": r["identifier"],
+                    "profile_image": r["profile_image"],
+                  },
+                  isWallet,
+                );
+
+                },
+                child: Container(
+                  width: 76,
+                  margin: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: isWallet
+                            ? Colors.green.shade100
+                            : Colors.blue.shade100,
+                        backgroundImage:
+                            (profileImage != null && profileImage.isNotEmpty)
+                                ? NetworkImage(profileImage)
+                                : null,
+                        child: (profileImage == null ||
+                                profileImage.isEmpty)
+                            ? Text(
+                                name
+                                    .trim()
+                                    .substring(0, 1)
+                                    .toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: isWallet
+                                      ? Colors.green
+                                      : Colors.blue,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  ),
 
       // ================= SUGGESTIONS =================
       if (paySuggestions.isNotEmpty)
@@ -1053,6 +1586,71 @@ if (!widget.isKycCompleted)
     );
   }
 }
+class _ScanPayInner extends StatelessWidget {
+  const _ScanPayInner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(40),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.touch_app, color: Color(0xFF4C6EF5)),
+          SizedBox(width: 8),
+          Text(
+            "Scan & Pay",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+class _ScannerInner extends StatelessWidget {
+  const _ScannerInner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 80,
+      width: 80,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Stack(
+        children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 900),
+            curve: Curves.easeInOut,
+            builder: (_, value, __) {
+              return Positioned(
+                top: 12 + (value * 44),
+                left: 8,
+                right: 8,
+                child: Container(
+                  height: 2,
+                  color: Colors.white,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
 // ================= PAY OPTION WIDGET =================
 class _PayOption extends StatelessWidget {
   final IconData icon;
@@ -1202,17 +1800,24 @@ void showReceivedAnimation(double amount) {
     final isCredit =
         latest["receiver_reg_id"] == widget.regId &&
         latest["status"] == "success";
+    final isDebit =
+    latest["sender_reg_id"] == widget.regId &&
+    latest["status"] == "success";
 
-    if (isNew && isCredit) {
-  final double amount =
-      double.tryParse(latest["amount"].toString()) ?? 0;
-  showReceivedAnimation(amount);
-  widget.onNewCredit();
+    if (isNew && (isCredit || isDebit)) {
+    final double amount =
+        double.tryParse(latest["amount"].toString()) ?? 0;
 
-  final dashboardState =
-      context.findAncestorStateOfType<_DashboardScreenState>();
-  dashboardState?.refreshWalletNow();
-}
+    showReceivedAnimation(amount);
+    widget.onNewCredit();
+
+    final dashboardState =
+        context.findAncestorStateOfType<_DashboardScreenState>();
+
+    await dashboardState?.refreshWalletNow();
+    await dashboardState?._refreshStudentState();
+  }
+
     _lastTxnId = latest["id"];
   }
   setState(() {
@@ -1859,6 +2464,7 @@ Widget build(BuildContext context) {
               _FeaturedBrandCard(title: "gamepass", cashback: "8% back"),
               _FeaturedBrandCard(title: "prime", cashback: "6% back"),
               _FeaturedBrandCard(title: "swiggy", cashback: "12% back"),
+              _FeaturedBrandCard(title: "playstore", cashback: "5% back"),
             ],
           ),
         ),
@@ -1881,6 +2487,7 @@ Widget build(BuildContext context) {
         childAspectRatio: 0.78, 
         children: const [
           _DiscountTile("apple", "15% back"),
+          _DiscountTile("playstore", "5% back"),
           _DiscountTile("amazon", "12% back"),
           _DiscountTile("gamepass", "8% back"),
           _DiscountTile("prime", "6% back"),
@@ -1971,6 +2578,8 @@ class _FeaturedBrandCard extends StatelessWidget {
         return  Colors.white;
       case "swiggy":
         return Colors.white;
+      case "playstore":
+        return Colors.white;
       default:
         return const Color(0xFF4C6EF5);
     }
@@ -2030,6 +2639,8 @@ class _DiscountTile extends StatelessWidget {
   Color get _brandColor {
     switch (title) {
       case "apple":
+        return Colors.white;
+      case "playstore":
         return Colors.white;
       case "amazon":
         return Colors.white; 
