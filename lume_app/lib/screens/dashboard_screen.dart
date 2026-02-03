@@ -71,10 +71,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         : widget.fullName.substring(0, 2).toUpperCase();
   }
   String get computedTier {
-  if (totalSpent >= 75000) return "platinum";
-  if (totalSpent >= 25000) return "gold";
+  if (totalSpent >= 250000) return "diamond";
+  if (totalSpent >= 175000) return "platinum";
+  if (totalSpent >= 100000) return "gold";
   return "silver";
 }
+
 
 Future<void> logout() async {
   final prefs = await SharedPreferences.getInstance();
@@ -91,37 +93,60 @@ Future<void> logout() async {
 Widget buildTopTierStatus() {
   final tier = computedTier;
 
+  String icon;
+  String label;
+  Color bgColor;
+  Color textColor;
+
+  switch (tier) {
+    case "gold":
+      icon = "🥇";
+      label = "Gold";
+      bgColor = const Color(0xFFFFF3CD);
+      textColor = const Color(0xFFFFA000);
+      break;
+
+    case "platinum":
+      icon = "💎";
+      label = "Platinum";
+      bgColor = const Color(0xFFECEFF1);
+      textColor = const Color(0xFF455A64);
+      break;
+
+    case "diamond":
+      icon = "💠";
+      label = "Diamond";
+      bgColor = const Color(0xFFE3F2FD);
+      textColor = const Color(0xFF0288D1);
+      break;
+
+    default: // silver
+      icon = "🥈";
+      label = "Silver";
+      bgColor = const Color(0xFFF1F3F5);
+      textColor = const Color(0xFF616161);
+  }
+
   return Column(
     mainAxisSize: MainAxisSize.min,
     children: [
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: tier == "gold"
-              ? const Color(0xFFFFF8E1)
-              : tier == "platinum"
-                  ? const Color(0xFFECEFF1)
-                  : const Color(0xFFF1F3F5),
-          borderRadius: BorderRadius.circular(14),
+          color: bgColor,
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              tier == "platinum"
-                  ? "💎"
-                  : tier == "gold"
-                      ? "🥇"
-                      : "🥈",
-              style: const TextStyle(fontSize: 14),
-            ),
+            Text(icon, style: const TextStyle(fontSize: 14)),
             const SizedBox(width: 6),
             Text(
-              tier[0].toUpperCase() + tier.substring(1),
+              label,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: tierColor,
+                color: textColor,
               ),
             ),
           ],
@@ -134,12 +159,13 @@ Widget buildTopTierStatus() {
           minHeight: 4,
           value: tierProgress.clamp(0.02, 1.0),
           backgroundColor: Colors.grey.shade300,
-          valueColor: AlwaysStoppedAnimation(tierColor),
+          valueColor: AlwaysStoppedAnimation(textColor),
         ),
       ),
     ],
   );
 }
+
 Widget buildKycStatusBadge() {
   final bool verified = isKycCompleted;
 
@@ -374,13 +400,16 @@ Future<void> _refreshStudentState() async {
 
 
 double get tierProgress {
-  if (totalSpent >= 75000) return 1.0;
-
-  if (totalSpent >= 25000) {
-    return ((totalSpent - 25000) / 50000).clamp(0.0, 1.0);
+  if (totalSpent >= 250000) return 1.0;
+  if (totalSpent >= 175000) {
+    return ((totalSpent - 175000) / 75000).clamp(0.0, 1.0);
   }
-  return (totalSpent / 25000).clamp(0.0, 1.0);
+  if (totalSpent >= 100000) {
+    return ((totalSpent - 100000) / 75000).clamp(0.0, 1.0);
+  }
+  return (totalSpent / 50000).clamp(0.0, 1.0);
 }
+
 
 IconData get tierIcon {
   if (computedTier == "platinum") return Icons.diamond;
@@ -389,10 +418,12 @@ IconData get tierIcon {
 }
 
 Color get tierColor {
+  if (computedTier == "diamond") return const Color(0xFF00C2FF);
   if (computedTier == "platinum") return Colors.blueGrey;
   if (computedTier == "gold") return Colors.amber;
   return Colors.grey;
 }
+
 
 
 Widget buildUserAvatar(double radius) {
@@ -529,46 +560,8 @@ Widget buildUserAvatar(double radius) {
                   const SizedBox(height: 6),
 
                   // ---- TIER BADGE ----
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: computedTier == "gold"
-                          ? const Color(0xFFFFF8E1)
-                          : computedTier == "platinum"
-                              ? const Color(0xFFECEFF1)
-                              : const Color(0xFFF1F3F5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                       Text(
-                          computedTier == "platinum"
-                              ? "💎"
-                              : computedTier == "gold"
-                                  ? "🥇"
-                                  : "🥈",
-                          style: const TextStyle(fontSize: 12),
-                        ),
-
-                        const SizedBox(width: 6),
-                        Text(
-                          "${computedTier[0].toUpperCase()}${computedTier.substring(1)} Member",
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: computedTier == "gold"
-                                ? const Color(0xFFFFC107)
-                                : computedTier == "platinum"
-                                    ? const Color(0xFF616161)
-                                    : const Color(0xFF9E9E9E),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  TierBadge(tier: computedTier),
                   const SizedBox(height: 8),
-
 
                   // ---- TIER PROGRESS BAR ----
                   SizedBox(
@@ -587,11 +580,13 @@ Widget buildUserAvatar(double radius) {
                   ),
                   const SizedBox(height: 4),
 
-                 if (totalSpent < 75000)
+                 if (totalSpent < 250000)
                   Text(
-                    totalSpent < 25000
-                        ? "₹${(25000 - totalSpent).round()} to reach Gold"
-                        : "₹${(75000 - totalSpent).round()} to reach Platinum",
+                    totalSpent < 100000
+                        ? "₹${(100000 - totalSpent).round()} to reach Gold"
+                        : totalSpent < 175000
+                            ? "₹${(175000 - totalSpent).round()} to reach Platinum"
+                            : "₹${(250000 - totalSpent).round()} to reach Diamond",
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 11,
@@ -823,14 +818,17 @@ class TierBadge extends StatelessWidget {
 
   Color get _color {
     switch (tier) {
-      case "gold":
-        return const Color(0xFFFFC107);
+      case "diamond":
+        return const Color(0xFF00C2FF);
       case "platinum":
         return const Color(0xFF9E9E9E);
+      case "gold":
+        return const Color(0xFFFFC107);
       default:
-        return const Color(0xFFB0BEC5); 
+        return const Color(0xFFB0BEC5);
     }
   }
+
 
   String get _label =>
       tier[0].toUpperCase() + tier.substring(1);
@@ -849,22 +847,24 @@ class TierBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            tier == "platinum"
-                ? "💎"
-                : tier == "gold"
-                    ? "🥇"
-                    : "🥈",
+          tier == "diamond"
+              ? "💠"
+              : tier == "platinum"
+                  ? "💎"
+                  : tier == "gold"
+                      ? "🥇"
+                      : "🥈",
             style: const TextStyle(fontSize: 14),
           ),
           const SizedBox(width: 6),
           Text(
-            "$_label Tier",
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: _color,
-            ),
-          ),
+        _label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: _color,
+        ),
+      ),
         ],
       ),
     );

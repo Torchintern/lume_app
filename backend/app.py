@@ -1960,9 +1960,11 @@ def update_user_tier(conn, c, reg_id):
 
     total = float(c.fetchone()["total"] or 0)
 
-    if total >= 75000:
+    if total >= 250000:
+        tier = "diamond"
+    elif total >= 175000:
         tier = "platinum"
-    elif total >= 25000:
+    elif total >= 100000:
         tier = "gold"
     else:
         tier = "silver"
