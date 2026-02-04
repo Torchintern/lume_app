@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = "http://192.168.0.4:5000/api";
+  static const String baseUrl = "http://192.168.0.3:5000/api";
   // "http://10.0.2.2:5000/api"
   static const Map<String, String> headers = {
     "Content-Type": "application/json",
@@ -137,7 +137,9 @@ class ApiService {
     "upi_id": data["upi_id"],
     "profile_image": data["profile_image"],
     "aadhaar_verified": data["aadhaar_verified"],
+    "aadhaar_last4": data["aadhaar_last4"],
     "pan_verified": data["pan_verified"],
+    "pan_masked": data["pan_masked"],
     "wallet_status": data["wallet_status"],
     "kyc_completion_percent": data["kyc_completion_percent"] ?? 0,
     "total_spent": data["total_spent"] ?? 0,
@@ -186,7 +188,7 @@ static Future<void> uploadProfileImage({
   // ================= AADHAAR KYC =================
   static Future<bool> verifyAadhaarKyc({
   required int registeredStudentId,
-  required String mobile,
+  required String aadhaarNumber,
   required String otp,
 }) async {
   final response = await http.post(
@@ -194,13 +196,14 @@ static Future<void> uploadProfileImage({
     headers: {'Content-Type': 'application/json'},
     body: jsonEncode({
       'registered_student_id': registeredStudentId,
-      'mobile': mobile,
+      'aadhaar_number': aadhaarNumber,
       'otp': otp,
     }),
   );
 
   return response.statusCode == 200;
 }
+
 
 // ============== Aadhaar OTP send ============
 static Future<String> sendAadhaarOtp({
@@ -730,13 +733,10 @@ static Future<String> verifyAddMoney({
       "card_data": cardData,
     }),
   );
-
   if (res.statusCode != 200) {
     return "failed";
   }
-
   final data = jsonDecode(res.body);
-
   return data["status"] ?? "failed"; // "success" | "failed"
 }
 // ====== Cancel add money =======
@@ -747,5 +747,33 @@ static Future<void> cancelAddMoney(int txnId) async {
     body: jsonEncode({"txn_id": txnId}),
   );
 }
+// ======= Scholar Data =======
+static Future<bool> submitScholarApplication(
+      Map<String, dynamic> payload) async {
+    final response = await http.post(
+      Uri.parse("$baseUrl/scholar/application"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(payload),
+    );
+    return response.statusCode == 201;
+  }
+
+static Future<Map<String, dynamic>> getScholarApplicationStatus(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/scholar/application/status/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return {
+    "hasApplication": false,
+    "status": null,
+  };
+}
+
+
+
 
 }

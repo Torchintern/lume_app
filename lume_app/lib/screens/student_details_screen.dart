@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../widgets/otp_bottom_sheet.dart';
 import '../widgets/primary_button.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class StudentDetailsScreen extends StatefulWidget {
   final int regId;
@@ -19,9 +18,6 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
 
   String aadhaarMessage = "";
   String panMessage = "";
-  String? verifiedAadhaar;
-  String? verifiedPan;
-
   bool isUpiEditable = true;
   bool isUpiSaving = false;
   final TextEditingController upiCtrl = TextEditingController();
@@ -41,13 +37,8 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     setState(() => loading = true);
 
     final data = await ApiService.getStudentDetails(widget.regId);
-    final prefs = await SharedPreferences.getInstance();
-
     setState(() {
       details = data;
-      verifiedAadhaar = prefs.getString("aadhaar_${widget.regId}");
-      verifiedPan = prefs.getString("pan_${widget.regId}");
-
       if (data["upi_id"] != null && data["upi_id"].toString().isNotEmpty) {
       upiCtrl.text =
           data["upi_id"].toString().replaceAll("@lumepay", "");
@@ -71,21 +62,6 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     return 0.56;
   }
 
-  // ================= MASK HELPERS =================
-  String maskAadhaar(String value) {
-    if (value.isEmpty || value.length < 4) {
-      return "XXXX XXXX XXXX";
-    }
-    return "XXXX XXXX ${value.substring(value.length - 4)}";
-  }
-
-  String maskPan(String value) {
-    if (value.isEmpty || value.length < 10) {
-      return "XXXXXXXXXX";
-    }
-    return "${value.substring(0, 5)}XXXX${value.substring(9)}";
-  }
-
   // ================= AADHAAR =================
   void startAadhaarVerification() async {
     await ApiService.sendAadhaarOtp(
@@ -104,19 +80,12 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
         onVerify: (otp) async {
           final res = await ApiService.verifyAadhaarKyc(
             registeredStudentId: widget.regId,
-            mobile: details!["mobile"],
+            aadhaarNumber: aadhaarCtrl.text.trim(),
             otp: otp.toString().trim(),
           );
 
           if (res) {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString(
-              "aadhaar_${widget.regId}",
-              aadhaarCtrl.text,
-            );
-
             aadhaarCtrl.clear();
-
             aadhaarMessage = "Aadhaar verified successfully";
             await loadDetails();
           } else {
@@ -153,12 +122,6 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
           );
 
           if (res) {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString(
-                "pan_${widget.regId}",
-                panCtrl.text,
-              );
-
               panCtrl.clear();
 
               panMessage = "PAN verified successfully";
@@ -189,16 +152,22 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
       appBar: AppBar(
-        leading: BackButton(
-  onPressed: () {
-    if (Navigator.canPop(context)) {
-      Navigator.pop(context, true);
-    }
-  },
-),
-        title: const Text("My Details"),
-        backgroundColor: const Color(0xFF4C6EF5),
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      foregroundColor: Colors.black,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () {
+          if (Navigator.canPop(context)) {
+            Navigator.pop(context, true);
+          }
+        },
       ),
+      title: const Text(
+        "My Details",
+        style: TextStyle(fontWeight: FontWeight.w600),
+      ),
+    ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -271,9 +240,9 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   color: Colors.green),
                               const SizedBox(width: 8),
                               Text(
-                                maskAadhaar(
-                                  verifiedAadhaar ?? aadhaarCtrl.text,
-                                ),
+                                details!["aadhaar_last4"] != null
+                                    ? "XXXX XXXX ${details!["aadhaar_last4"]}"
+                                    : "Verified",
                               ),
                             ],
                           )
@@ -331,9 +300,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                                   color: Colors.green),
                               const SizedBox(width: 8),
                               Text(
-                                maskPan(
-                                  verifiedPan ?? panCtrl.text,
-                                ),
+                                details!["pan_masked"] ?? "Verified",
                               ),
                             ],
                           )

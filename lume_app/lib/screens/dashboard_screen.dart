@@ -20,6 +20,16 @@ import 'package:lume_app/widgets/create_upi_dialog.dart';
 import 'package:lume_app/screens/cashback_store_screen.dart';
 import 'package:lume_app/screens/rewards/brand_vouchers_screen.dart';
 import 'package:lume_app/screens/rewards/my_vouchers_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:lume_app/screens/scholar_screen.dart';
+import 'package:lume_app/screens/about/terms_conditions_screen.dart';
+import 'package:lume_app/screens/about/privacy_policy_screen.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:lume_app/screens/challenges_screen.dart';
+import 'package:lume_app/screens/about/about_us_screen.dart';
+import 'package:lume_app/screens/app_settings_screen.dart';
+import 'package:local_auth/local_auth.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -45,7 +55,15 @@ class DashboardScreen extends StatefulWidget {
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
+
+  final LocalAuthentication _auth = LocalAuthentication();
+  bool _authInProgress = false;
+  bool _unlocked = false;
+  bool _checkingLock = true;
+  static const int _gracePeriodSeconds = 45;
+  DateTime? _lastPausedTime;
   int currentIndex = 2;
   int unreadCount = 0;
   bool aadhaarVerified = false;
@@ -60,7 +78,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool upiCopied = false;
   double totalSpent = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
+  String appVersion = "";
+
+Future<void> _checkAndAuthenticate() async {
+  if (_unlocked || _authInProgress) return;
+
+  _authInProgress = true;
+
+  final prefs = await SharedPreferences.getInstance();
+  final shouldLock = prefs.getBool("app_lock") ?? false;
+
+  if (!shouldLock) {
+    if (!mounted) return;
+    setState(() {
+      _unlocked = true;
+      _checkingLock = false;
+    });
+    _authInProgress = false;
+    return;
+  }
+
+  try {
+    final success = await _auth.authenticate(
+      localizedReason: 'Authenticate to open Lume',
+      options: const AuthenticationOptions(
+        stickyAuth: true,
+        biometricOnly: false,
+      ),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _unlocked = success;
+      _checkingLock = false;
+    });
+  } catch (_) {
+    if (!mounted) return;
+    setState(() {
+      _unlocked = false;
+      _checkingLock = false;
+    });
+  } finally {
+    _authInProgress = false;
+  }
+}
+
 
   // ================= USER HELPERS =================
   String get initials {
@@ -312,28 +375,104 @@ Future<void> _loadUnreadCount() async {
   } catch (_) {
   }
 }
+
 @override
 void initState() {
   super.initState();
+  WidgetsBinding.instance.addObserver(this);
+
+  _persistRegId();
+  _loadAppVersion();
+  _checkAndAuthenticate(); 
+
   if (widget.initialTab == "card") {
-  currentIndex = 0;
-} else if (widget.initialTab == "wallet") {
-  currentIndex = 1;
-} else if (widget.initialTab == "pay") {
-  currentIndex = 2;
-} else if (widget.initialTab == "rewards") {
-  currentIndex = 3;
-} else {
-  currentIndex = 2; 
-}
-_pageController = PageController(initialPage: currentIndex);
+    currentIndex = 0;
+  } else if (widget.initialTab == "wallet") {
+    currentIndex = 1;
+  } else if (widget.initialTab == "pay") {
+    currentIndex = 2;
+  } else if (widget.initialTab == "rewards") {
+    currentIndex = 3;
+  } else {
+    currentIndex = 2;
+  }
+
+  _pageController = PageController(initialPage: currentIndex);
   _loadUnreadCount();
   _refreshStudentState();
 }
+
+Future<void> _persistRegId() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt("reg_id", widget.regId);
+}
+Future<void> openMyCampusApp() async {
+  const String packageName = "com.mycampus.app";
+  const String playStoreUrl =
+      "https://play.google.com/store/apps/details?id=com.campXStudent.app";
+
+  if (!Platform.isAndroid) return;
+
+  try {
+    final intent = AndroidIntent(
+      action: 'android.intent.action.VIEW',
+      package: packageName,
+    );
+
+    await intent.launch();
+  } catch (e) {
+    final uri = Uri.parse(playStoreUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+    }
+  }
+}
+
+
+
 @override
 void dispose() {
+  WidgetsBinding.instance.removeObserver(this);
   _pageController.dispose();
   super.dispose();
+}
+
+@override
+void didChangeAppLifecycleState(AppLifecycleState state) {
+  if (state == AppLifecycleState.paused ||
+      state == AppLifecycleState.inactive) {
+    _lastPausedTime = DateTime.now();
+  }
+
+  if (state == AppLifecycleState.resumed) {
+    final now = DateTime.now();
+    if (_lastPausedTime == null) {
+      _checkingLock = true;
+      _unlocked = false;
+      _checkAndAuthenticate();
+      return;
+    }
+    final diff = now.difference(_lastPausedTime!).inSeconds;
+    if (diff > _gracePeriodSeconds) {
+      _checkingLock = true;
+      _unlocked = false;
+      _checkAndAuthenticate();
+    }
+  }
+}
+
+
+// App Version
+Future<void> _loadAppVersion() async {
+  final info = await PackageInfo.fromPlatform();
+  if (!mounted) return;
+
+  setState(() {
+    appVersion = info.version;
+  });
 }
 
 // Pin status check
@@ -453,8 +592,20 @@ Widget buildUserAvatar(double radius) {
 
 
   @override
-  Widget build(BuildContext context) {
-    return WillPopScope(
+Widget build(BuildContext context) {
+  if (_checkingLock) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  if (!_unlocked) {
+    return const Scaffold(
+      body: Center(child: Text("Authentication required")),
+    );
+  }
+
+  return WillPopScope(
   onWillPop: () async => false,
   child: Scaffold(
     key: _scaffoldKey,
@@ -463,6 +614,7 @@ Widget buildUserAvatar(double radius) {
       // ================= DRAWER =================
       drawer: Drawer(
         child: SafeArea(
+          child: SingleChildScrollView(
           child: Column(
             children: [
               const SizedBox(height: 24),
@@ -602,6 +754,7 @@ Widget buildUserAvatar(double radius) {
               ListTile(
                 leading: const Icon(Icons.person_outline),
                 title: const Text("My Details"),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
                     Navigator.of(context).pop();
 
@@ -620,6 +773,7 @@ Widget buildUserAvatar(double radius) {
               ListTile(
                   leading: const Icon(Icons.payments_outlined),
                   title: const Text("UPI & Payment Settings"),
+                  trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     Navigator.of(context).pop();
 
@@ -635,14 +789,174 @@ Widget buildUserAvatar(double radius) {
                     );
                   },
                 ),
-              const Spacer(),
+                // ================= EXPLORE =================
+                ListTile(
+                  leading: const Icon(Icons.school_outlined),
+                  title: const Text("Scholar"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ScholarScreen(),
+                      ),
+                    );
+                  },
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.account_balance),
+                  title: const Text("My Campus"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context);
+                    openMyCampusApp();
+                  },
+                ),
+
+
+                ListTile(
+                  leading: const Icon(Icons.emoji_events_outlined),
+                  title: const Text("Challenges"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context); 
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ChallengesScreen(),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.settings_outlined),
+                  title: const Text("App Settings"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context); 
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AppSettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+
+
+                // ================= SUPPORT =================
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Support",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.help_outline),
+                  title: const Text("Support"),
+                  subtitle: const Text("Customer Support"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {    
+                  },
+                ),
+
+                // ================= ABOUT =================
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "About",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                ),
+
+               ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text("About Us"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context); 
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AboutUsScreen(),
+                    ),
+                  );
+                },
+              ),
+
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: const Text("Terms & Conditions"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TermsConditionsScreen(),
+                      ),
+                    );
+                  },
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined),
+                  title: const Text("Privacy Policy"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context); 
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PrivacyPolicyScreen(),
+                      ),
+                    );
+                  },
+                ),
+
+
+                // ================= APP VERSION =================
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: Text(
+                    appVersion.isEmpty ? "" : "App Version $appVersion",
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  ),
+                ),
+              const SizedBox(height: 20),
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text("Logout"),
                 onTap: logout,
               ),
+
               const SizedBox(height: 20),
             ],
+          ),
           ),
         ),
       ),
@@ -675,7 +989,22 @@ Widget buildUserAvatar(double radius) {
                     ),
                   ),
 
-                  buildTopTierStatus(),
+                  Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ChallengesScreen(),
+                        ),
+                      );
+                    },
+                    child: buildTopTierStatus(),
+                  ),
+                ),
+
                   Align(
                     alignment: Alignment.centerRight,
                     child: Stack(

@@ -12,6 +12,14 @@ def hash_pin(pin: str) -> str:
 def verify_pin(pin: str, hashed: str) -> bool:
     return bcrypt.checkpw(pin.encode(), hashed.encode())
 
+import re
+
+def mask_pan(pan: str) -> str:
+    """
+    Masks PAN digits, keeps alphabets.
+    Example: ABCDE1234F → ABCDEXXXXF
+    """
+    return re.sub(r'\d', 'X', pan.upper())
 
 app = Flask(__name__)
 CORS(app)
@@ -220,7 +228,7 @@ def upload_profile_image():
 
     conn = get_db_connection()
     c = conn.cursor()
-    image_url = f"http://192.168.0.4:5000/{path}"
+    image_url = f"http://192.168.0.3:5000/{path}"
 
     c.execute("""
         UPDATE registered_students
@@ -231,7 +239,7 @@ def upload_profile_image():
     c.close()
     conn.close()
 
-    image_url = f"http://192.168.0.4:5000/{path}"
+    image_url = f"http://192.168.0.3:5000/{path}"
     return {"image_url": image_url}, 200
 
 
@@ -255,6 +263,8 @@ def student_details(reg_id):
         rs.upi_id,
         rs.aadhaar_verified,
         rs.pan_verified,
+        rs.aadhaar_last4,
+        rs.pan_masked,
         rs.kyc_completion_percent,
         rs.tier,
         rs.total_spent AS total_spent,
@@ -330,124 +340,169 @@ def get_recent_payments(reg_id):
 def aadhaar_kyc():
     d = request.json
 
-    # BASIC VALIDATION
-    if not d or "registered_student_id" not in d or "mobile" not in d:
+    # ---------------- BASIC VALIDATION ----------------
+    if not d or "registered_student_id" not in d:
         return {"message": "INVALID_REQUEST"}, 400
-
-    # ---------------- SEND OTP MODE ----------------
-    if "otp" not in d or not d["otp"]:
-        send_mobile_otp(d["mobile"])
-        return {"message": "AADHAAR_OTP_SENT"}, 200
-
-    # ---------------- VERIFY OTP MODE ----------------
-    if not verify_otp(d.get("otp")):
-        return {"message": "INVALID_OTP"}, 400
 
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
-    # Check Aadhaar status
-    c.execute("""
-        SELECT aadhaar_verified FROM registered_students
-        WHERE id=%s
-    """, (d["registered_student_id"],))
+    try:
+        # FETCH MOBILE + STATUS FROM DB (DO NOT TRUST FRONTEND)
+        c.execute("""
+            SELECT
+                s.mobile,
+                rs.aadhaar_verified
+            FROM registered_students rs
+            JOIN students s ON rs.student_id = s.id
+            WHERE rs.id = %s
+        """, (d["registered_student_id"],))
 
-    row = c.fetchone()
-    if not row:
+        row = c.fetchone()
+        if not row:
+            return {"message": "INVALID_USER"}, 404
+
+        mobile = row["mobile"]
+
+        # ---------------- SEND OTP MODE ----------------
+        if "otp" not in d or not d["otp"]:
+            send_mobile_otp(mobile)
+            return {"message": "AADHAAR_OTP_SENT"}, 200
+
+        # ---------------- VERIFY OTP ----------------
+        if not verify_otp(d["otp"]):
+            return {"message": "INVALID_OTP"}, 400
+
+        # ---------------- ALREADY VERIFIED ----------------
+        if row["aadhaar_verified"] == 1:
+            return {"message": "AADHAAR_ALREADY_VERIFIED"}, 200
+
+        # ---------------- VALIDATE AADHAAR NUMBER ----------------
+        aadhaar_number = d.get("aadhaar_number")
+        if not aadhaar_number or len(aadhaar_number) != 12 or not aadhaar_number.isdigit():
+            return {"message": "INVALID_AADHAAR_NUMBER"}, 400
+
+        #  STORE ONLY LAST 4 DIGITS
+        aadhaar_last4 = aadhaar_number[-4:]
+
+        # ---------------- UPDATE REGISTERED STUDENT ----------------
+        c.execute("""
+            UPDATE registered_students
+            SET
+                aadhaar_verified = 1,
+                aadhaar_last4 = %s,
+                kyc_completion_percent = 75
+            WHERE id = %s
+        """, (
+            aadhaar_last4,
+            d["registered_student_id"]
+        ))
+
+        # ---------------- ACTIVATE WALLET ----------------
+        c.execute("""
+            UPDATE wallets
+            SET status = 'active'
+            WHERE registered_student_id = %s
+        """, (d["registered_student_id"],))
+
+        conn.commit()
+
+        return {
+            "message": "AADHAAR_VERIFIED_WALLET_ACTIVE",
+            "aadhaar_verified": 1,
+            "aadhaar_last4": aadhaar_last4,
+            "wallet_status": "active"
+        }, 200
+
+    except Exception as e:
+        conn.rollback()
+        print("AADHAAR KYC ERROR:", e)
+        return {"message": "AADHAAR_KYC_FAILED"}, 500
+
+    finally:
         c.close()
         conn.close()
-        return {"message": "INVALID_USER"}, 404
-
-    if row["aadhaar_verified"] == 1:
-        c.close()
-        conn.close()
-        return {"message": "AADHAAR_ALREADY_VERIFIED"}, 200
-
-    # Mark Aadhaar verified
-    c.execute("""
-    UPDATE registered_students
-    SET
-        aadhaar_verified = 1,
-        wallet_status = 'active',
-        kyc_completion_percent = 75
-    WHERE id=%s
-""", (d["registered_student_id"],))
-
-
-    # Activate wallet
-    c.execute("""
-    UPDATE wallets
-    SET status='active'
-    WHERE registered_student_id=%s
-""", (d["registered_student_id"],))
-
-    conn.commit()
-    c.close()
-    conn.close()
-
-    return {
-        "message": "AADHAAR_VERIFIED_WALLET_ACTIVE",
-        "aadhaar_verified": 1,
-        "wallet_status": "active"
-    }, 200
-
 
 # ================= PAN KYC (SEND + VERIFY OTP) =================
 @app.route("/api/kyc/pan", methods=["POST"])
 def pan_kyc():
     d = request.json
 
-    # BASIC VALIDATION
-    if not d or "registered_student_id" not in d or "mobile" not in d:
+    # ---------------- BASIC VALIDATION ----------------
+    if not d or "registered_student_id" not in d:
         return {"message": "INVALID_REQUEST"}, 400
-
-    # ---------------- SEND OTP MODE ----------------
-    if "otp" not in d or not d["otp"]:
-        send_mobile_otp(d["mobile"])
-        return {"message": "PAN_OTP_SENT"}, 200
-
-    # ---------------- VERIFY OTP MODE ----------------
-    if not verify_otp(d.get("otp")):
-        return {"message": "INVALID_OTP"}, 400
 
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
-    # Check PAN status
-    c.execute("""
-        SELECT pan_verified FROM registered_students
-        WHERE id=%s
-    """, (d["registered_student_id"],))
+    try:
+        # 🔹 FETCH MOBILE + PAN STATUS FROM DB
+        c.execute("""
+            SELECT
+                s.mobile,
+                rs.pan_verified
+            FROM registered_students rs
+            JOIN students s ON rs.student_id = s.id
+            WHERE rs.id = %s
+        """, (d["registered_student_id"],))
 
-    row = c.fetchone()
-    if not row:
+        row = c.fetchone()
+        if not row:
+            return {"message": "INVALID_USER"}, 404
+
+        mobile = row["mobile"]
+
+        # ---------------- SEND OTP MODE ----------------
+        if "otp" not in d or not d["otp"]:
+            send_mobile_otp(mobile)
+            return {"message": "PAN_OTP_SENT"}, 200
+
+        # ---------------- VERIFY OTP ----------------
+        if not verify_otp(d["otp"]):
+            return {"message": "INVALID_OTP"}, 400
+
+        # ---------------- ALREADY VERIFIED ----------------
+        if row["pan_verified"] == 1:
+            return {"message": "PAN_ALREADY_VERIFIED"}, 200
+
+        # ---------------- VALIDATE PAN NUMBER ----------------
+        pan_number = d.get("pan_number", "").upper()
+
+        # PAN regex: 5 letters + 4 digits + 1 letter
+        if not re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$', pan_number):
+            return {"message": "INVALID_PAN_NUMBER"}, 400
+
+        # MASK PAN (digits only)
+        pan_masked = mask_pan(pan_number)
+
+        # ---------------- UPDATE REGISTERED STUDENT ----------------
+        c.execute("""
+            UPDATE registered_students
+            SET
+                pan_verified = 1,
+                pan_masked = %s,
+                kyc_completion_percent = 100
+            WHERE id = %s
+        """, (
+            pan_masked,
+            d["registered_student_id"]
+        ))
+
+        conn.commit()
+
+        return {
+            "message": "PAN_VERIFIED",
+            "pan_verified": 1
+        }, 200
+
+    except Exception as e:
+        conn.rollback()
+        print("PAN KYC ERROR:", e)
+        return {"message": "PAN_KYC_FAILED"}, 500
+
+    finally:
         c.close()
         conn.close()
-        return {"message": "INVALID_USER"}, 404
-
-    if row["pan_verified"] == 1:
-        c.close()
-        conn.close()
-        return {"message": "PAN_ALREADY_VERIFIED"}, 200
-
-    # Mark PAN verified
-    c.execute("""
-    UPDATE registered_students
-    SET
-        pan_verified = 1,
-        kyc_completion_percent = 100
-    WHERE id=%s
-""", (d["registered_student_id"],))
-
-
-    conn.commit()
-    c.close()
-    conn.close()
-
-    return {
-        "message": "PAN_VERIFIED",
-        "pan_verified": 1
-    }, 200
 
 # ================ Monthly spent for Verified Users ===================
 def _get_monthly_spent(reg_id):
@@ -1975,6 +2030,120 @@ def update_user_tier(conn, c, reg_id):
             tier=%s
         WHERE id=%s
     """, (total, tier, reg_id))
+
+# ============= Create Scholar Application =================    
+@app.route("/api/scholar/application", methods=["POST"])
+def create_scholar_application():
+    d = request.json
+
+    required_fields = [
+        "full_name",
+        "email",
+        "phone",
+        "loan_amount",
+        "city",
+        "country",
+        "admission_status",
+        "target_intake"
+    ]
+
+    if not d or not all(k in d for k in required_fields):
+        return {"message": "INVALID_REQUEST"}, 400
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT id
+        FROM students
+        WHERE mobile = %s OR email = %s
+        LIMIT 1
+    """, (d["phone"], d["email"]))
+
+    student = c.fetchone()
+
+    if not student:
+        c.close()
+        conn.close()
+        return {"message": "STUDENT_NOT_FOUND"}, 400
+
+    student_id = student[0]
+    c.execute("""
+        SELECT id
+        FROM registered_students
+        WHERE student_id = %s
+        LIMIT 1
+    """, (student_id,))
+
+    reg = c.fetchone()
+
+    if not reg:
+        c.close()
+        conn.close()
+        return {"message": "REGISTERED_STUDENT_NOT_FOUND"}, 400
+
+    registered_student_id = reg[0]
+    c.execute("""
+        INSERT INTO scholar_applications (
+            registered_student_id,
+            full_name,
+            email,
+            phone,
+            loan_amount,
+            city,
+            country,
+            admission_status,
+            target_intake,
+            status
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending')
+    """, (
+        registered_student_id,
+        d["full_name"],
+        d["email"],
+        d["phone"],
+        d["loan_amount"],
+        d["city"],
+        d["country"],
+        d["admission_status"],
+        d["target_intake"],
+    ))
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"message": "APPLICATION_CREATED"}, 201
+
+
+
+# ======== get scholar status =============
+@app.route("/api/scholar/application/status/<int:reg_id>", methods=["GET"])
+def get_scholar_application_status(reg_id):
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT status
+        FROM scholar_applications
+        WHERE registered_student_id = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (reg_id,))
+
+    row = c.fetchone()
+    c.close()
+    conn.close()
+
+    if not row:
+        return {
+            "hasApplication": False,
+            "status": None
+        }, 200
+
+    return {
+        "hasApplication": True,
+        "status": row["status"]  
+    }, 200
 
 
 #========================= RUN=========================

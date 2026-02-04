@@ -1,30 +1,53 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet access -->
+    <!-- ================= PERMISSIONS ================= -->
+
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Location -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+
+    <!-- Biometrics -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
 
+    <!-- Notifications -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         android:required="false" />
 
+    <!-- Media -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES"
         android:required="false" />
 
+    <!-- Legacy storage -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"
         android:required="false" />
 
+    <!-- ================= QUERIES ================= -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+
+        <package android:name="com.campXStudent.app"/>
+    </queries>
+
+    <!-- ================= APPLICATION ================= -->
     <application
         android:label="lume_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="false"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+
+        android:enableOnBackInvokedCallback="true">
 
         <activity
             android:name=".MainActivity"
@@ -44,18 +67,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
         </activity>
 
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-    </application>
 
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
-        </intent>
-    </queries>
+    </application>
 
 </manifest>
