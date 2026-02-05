@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = "http://192.168.0.3:5000/api";
+  static const String baseUrl = "http://192.168.0.4:5000/api";
   // "http://10.0.2.2:5000/api"
   static const Map<String, String> headers = {
     "Content-Type": "application/json",
@@ -134,6 +134,7 @@ class ApiService {
     "full_name": data["full_name"],
     "mobile": data["mobile"],
     "email": data["email"],
+    "college": data["college"] ?? "",
     "upi_id": data["upi_id"],
     "profile_image": data["profile_image"],
     "aadhaar_verified": data["aadhaar_verified"],
@@ -144,6 +145,10 @@ class ApiService {
     "kyc_completion_percent": data["kyc_completion_percent"] ?? 0,
     "total_spent": data["total_spent"] ?? 0,
     "tier": data["tier"] ?? "silver",
+    "server_time": data["server_time"] ?? "",
+  "weather_temp": data["weather_temp"] ?? 0,
+  "weather_condition": data["weather_condition"] ?? "",
+
   };
 }
 

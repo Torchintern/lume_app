@@ -3,6 +3,10 @@ import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../widgets/otp_bottom_sheet.dart';
 import '../widgets/primary_button.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'dart:async';
 
 class StudentDetailsScreen extends StatefulWidget {
   final int regId;
@@ -15,6 +19,10 @@ class StudentDetailsScreen extends StatefulWidget {
 class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   Map<String, dynamic>? details;
   bool loading = true;
+  String liveWeatherTemp = "--";
+  String liveWeatherCondition = "Loading...";
+  bool weatherLoading = true;
+  Timer? weatherTimer;
 
   String aadhaarMessage = "";
   String panMessage = "";
@@ -30,7 +38,92 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
   void initState() {
     super.initState();
     loadDetails();
+    loadLiveWeather();
+    weatherTimer = Timer.periodic(
+    const Duration(minutes: 5),
+    (timer) => loadLiveWeather(),
+  );
   }
+
+  @override
+  void dispose() {
+    weatherTimer?.cancel();
+    super.dispose();
+  }
+
+  // ===== WEATHER ICON HELPER =====  
+  IconData weatherIcon(String condition) {
+    switch (condition.toLowerCase()) {
+      case "cloudy":
+      case "partly cloudy":
+        return Icons.cloud;
+      case "rain":
+        return Icons.umbrella;
+      case "sunny":
+      case "clear":
+        return Icons.wb_sunny;
+      default:
+        return Icons.cloud;
+    }
+  }
+  String weatherCodeToText(int code) {
+  if (code == 0) return "Clear";
+  if (code <= 3) return "Partly Cloudy";
+  if (code <= 48) return "Foggy";
+  if (code <= 67) return "Rain";
+  if (code <= 77) return "Snow";
+  return "Cloudy";
+}
+  LinearGradient getWeatherGradient(String condition) {
+    switch (condition.toLowerCase()) {
+      case "clear":
+      case "sunny":
+        return const LinearGradient(
+          colors: [Color(0xFFFFC107), Color(0xFFFF9800)],
+        );
+
+      case "rain":
+        return const LinearGradient(
+          colors: [Color(0xFF607D8B), Color(0xFF455A64)],
+        );
+
+      case "partly cloudy":
+      case "cloudy":
+      default:
+        return const LinearGradient(
+          colors: [Color(0xFF90A4AE), Color(0xFF607D8B)],
+        );
+    }
+  }
+
+  // ======== Greetings helper ===========
+  String getGreeting() {
+  final hour = DateTime.now().hour;
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  return "Good Evening";
+}
+
+String getFormattedDate() {
+  final now = DateTime.now();
+  return "${_weekday(now.weekday)}, ${now.day.toString().padLeft(2, '0')} "
+      "${_month(now.month)} ${now.year}";
+}
+
+String _weekday(int day) {
+  const days = [
+    "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"
+  ];
+  return days[day - 1];
+}
+
+String _month(int m) {
+  const months = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December"
+  ];
+  return months[m - 1];
+}
 
   // ================= LOAD DETAILS =================
   Future<void> loadDetails() async {
@@ -51,6 +144,45 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
       loading = false;
     });
   }
+
+  Future<void> loadLiveWeather() async {
+  try {
+    LocationPermission permission = await Geolocator.requestPermission();
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      setState(() {
+        weatherLoading = false;
+      });
+      return;
+    }
+
+    final position = await Geolocator.getCurrentPosition();
+
+    final lat = position.latitude;
+    final lon = position.longitude;
+
+    final url =
+        "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true";
+
+    final res = await http.get(Uri.parse(url));
+
+    final data = jsonDecode(res.body);
+
+    final temp = data["current_weather"]["temperature"];
+    final code = data["current_weather"]["weathercode"];
+
+    setState(() {
+      liveWeatherTemp = temp.toString();
+      liveWeatherCondition = weatherCodeToText(code);
+      weatherLoading = false;
+    });
+  } catch (e) {
+    setState(() {
+      weatherLoading = false;
+    });
+  }
+}
 
   // ================= KYC PROGRESS =================
   double get kycProgress {
@@ -174,44 +306,38 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
           child: Column(
             children: [
               // ================= KYC STATUS =================
-              _card(
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("KYC Status",
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 10),
-                    LinearProgressIndicator(
-                      value: kycProgress,
-                      minHeight: 8,
-                      backgroundColor: Colors.grey.shade300,
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text(
-                          kycProgress == 1.0
-                              ? "KYC Completed"
-                              : "KYC ${(kycProgress * 100).toInt()}%",
-                          style: TextStyle(
-                            color: kycProgress == 1.0
-                                ? Colors.green
-                                : Colors.orange,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (kycProgress == 1.0)
-                          const Icon(Icons.verified, color: Colors.green),
-                      ],
-                    ),
-                  ],
+              if (kycProgress < 1.0) ...[
+                _card(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("KYC Status",
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      LinearProgressIndicator(
+                        value: kycProgress,
+                        minHeight: 8,
+                        backgroundColor: Colors.grey.shade300,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "KYC ${(kycProgress * 100).toInt()}%",
+                        style: const TextStyle(color: Colors.orange),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 20),
+              ],
+
+              // ================= GREETING CARD =================
+              _greetingCard(),
 
               const SizedBox(height: 20),
 
-              // ================= STUDENT DETAILS =================
+            // ================= STUDENT DETAILS =================
+
               _card(
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,6 +345,7 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                     _info("Name", details!["full_name"]),
                     _info("Mobile", details!["mobile"]),
                     _info("Email", details!["email"]),
+                    _info("College", details!["college"] ?? ""),
                   ],
                 ),
               ),
@@ -234,18 +361,46 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     aadhaarVerified
-                        ? Row(
-                            children: [
-                              const Icon(Icons.check_circle,
-                                  color: Colors.green),
-                              const SizedBox(width: 8),
-                              Text(
-                                details!["aadhaar_last4"] != null
-                                    ? "XXXX XXXX ${details!["aadhaar_last4"]}"
-                                    : "Verified",
+                      ? Stack(
+                          children: [
+                            // Aadhaar Card Image
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.asset(
+                                "assets/images/aadhaar_card.png",
+                                width: double.infinity,
+                                height: 180,
+                                fit: BoxFit.cover,
                               ),
-                            ],
-                          )
+                            ),
+
+                            // Aadhaar Number Overlay
+                            Positioned(
+                              bottom: 20,
+                              left: 20,
+                              child: Text(
+                                "XXXX XXXX ${details!["aadhaar_last4"]}",
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+
+                            // Verified Icon
+                            const Positioned(
+                              top: 12,
+                              right: 12,
+                              child: Icon(
+                                Icons.verified,
+                                color: Colors.green,
+                                size: 28,
+                              ),
+                            ),
+                          ],
+                        )
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -294,16 +449,46 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     panVerified
-                        ? Row(
-                            children: [
-                              const Icon(Icons.check_circle,
-                                  color: Colors.green),
-                              const SizedBox(width: 8),
-                              Text(
-                                details!["pan_masked"] ?? "Verified",
+                      ? Stack(
+                          children: [
+                            // PAN Card Image
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.asset(
+                                "assets/images/pan_card.png",
+                                width: double.infinity,
+                                height: 180,
+                                fit: BoxFit.cover,
                               ),
-                            ],
-                          )
+                            ),
+
+                            // PAN Number Overlay
+                            Positioned(
+                              bottom: 20,
+                              left: 20,
+                              child: Text(
+                                details!["pan_masked"] ?? "",
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+
+                            // Verified Badge
+                            const Positioned(
+                              top: 12,
+                              right: 12,
+                              child: Icon(
+                                Icons.verified,
+                                color: Colors.green,
+                                size: 28,
+                              ),
+                            ),
+                          ],
+                        )
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -480,6 +665,74 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
       ),
     );
   }
+  
+  // ===== Greeting card Helper ======
+  Widget _greetingCard() {
+  final name = details?["full_name"] ?? "";
+
+  final weatherTemp = liveWeatherTemp;
+  final weatherCondition = liveWeatherCondition;
+
+
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+    gradient: getWeatherGradient(liveWeatherCondition),
+    borderRadius: BorderRadius.circular(26),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Hi $name,",
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "${getGreeting()}, ${getFormattedDate()}",
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Column(
+          children: [
+            Row(
+              children: [
+                Icon(
+                  weatherIcon(weatherCondition),
+                  size: 28,
+                  color: Colors.grey,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  "$weatherTemp°C",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              weatherCondition,
+              style: TextStyle(color: Colors.grey.shade600),
+            )
+          ],
+        )
+      ],
+    ),
+  );
+}
 
   // ================= HELPERS =================
   Widget _card(Widget child) {
@@ -537,4 +790,5 @@ class _StudentDetailsScreenState extends State<StudentDetailsScreen> {
       ),
     );
   }
+  
 }

@@ -5,6 +5,7 @@ from otp_service import send_mobile_otp, send_email_otp, verify_otp
 import bcrypt
 import os
 from flask import send_from_directory
+from datetime import datetime
 
 def hash_pin(pin: str) -> str:
     return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
@@ -228,7 +229,7 @@ def upload_profile_image():
 
     conn = get_db_connection()
     c = conn.cursor()
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
 
     c.execute("""
         UPDATE registered_students
@@ -239,7 +240,7 @@ def upload_profile_image():
     c.close()
     conn.close()
 
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
     return {"image_url": image_url}, 200
 
 
@@ -259,6 +260,7 @@ def student_details(reg_id):
         s.full_name,
         s.mobile,
         s.email,
+        u.name AS college,
         rs.profile_image,
         rs.upi_id,
         rs.aadhaar_verified,
@@ -271,15 +273,27 @@ def student_details(reg_id):
         w.status AS wallet_status
         FROM registered_students rs
         JOIN students s ON rs.student_id = s.id
+        JOIN universities u ON s.university_id = u.id 
         JOIN wallets w ON rs.id = w.registered_student_id
         WHERE rs.id=%s
     """, (reg_id,))
 
     data = c.fetchone()
+
+    # ================= GREETING DATA =================
+    if data:
+        # Server Time
+        data["server_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # TEMP Weather (Later can replace with real API)
+        data["weather_temp"] = 26
+        data["weather_condition"] = "Partly Cloudy"
+
     c.close()
     conn.close()
 
     return jsonify(data), 200
+
 
 # ================== Get Recent Payees ==============
 @app.route("/api/payments/recent/<int:reg_id>", methods=["GET"])
