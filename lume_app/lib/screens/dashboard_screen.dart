@@ -30,6 +30,8 @@ import 'package:lume_app/screens/challenges_screen.dart';
 import 'package:lume_app/screens/about/about_us_screen.dart';
 import 'package:lume_app/screens/app_settings_screen.dart';
 import 'package:local_auth/local_auth.dart';
+import '../utils/tier_assets.dart';
+import '/widgets/tier_points_swap_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -76,7 +78,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   String? profileImageUrl;
   late final PageController _pageController;
   bool upiCopied = false;
-  double totalSpent = 0;
+  int rewardPoints = 0;
+  String backendTier = "silver";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String appVersion = "";
 
@@ -133,101 +136,27 @@ Future<void> _checkAndAuthenticate() async {
         ? "${parts[0][0]}${parts[1][0]}".toUpperCase()
         : widget.fullName.substring(0, 2).toUpperCase();
   }
-  String get computedTier {
-  if (totalSpent >= 250000) return "diamond";
-  if (totalSpent >= 175000) return "platinum";
-  if (totalSpent >= 100000) return "gold";
-  return "silver";
-}
 
-
-Future<void> logout() async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove("session_reg_id");
-  await prefs.remove("session_mobile");
-  await prefs.remove("session_email");
-  await prefs.remove("session_name");
-  if (!mounted) return;
-  Navigator.of(context).pushAndRemoveUntil(
-    MaterialPageRoute(builder: (_) => const LoginScreen()),
-    (route) => false,
-  );
-}
-Widget buildTopTierStatus() {
-  final tier = computedTier;
-
-  String icon;
-  String label;
-  Color bgColor;
-  Color textColor;
-
-  switch (tier) {
-    case "gold":
-      icon = "🥇";
-      label = "Gold";
-      bgColor = const Color(0xFFFFF3CD);
-      textColor = const Color(0xFFFFA000);
-      break;
-
-    case "platinum":
-      icon = "💎";
-      label = "Platinum";
-      bgColor = const Color(0xFFECEFF1);
-      textColor = const Color(0xFF455A64);
-      break;
-
-    case "diamond":
-      icon = "💠";
-      label = "Diamond";
-      bgColor = const Color(0xFFE3F2FD);
-      textColor = const Color(0xFF0288D1);
-      break;
-
-    default: // silver
-      icon = "🥈";
-      label = "Silver";
-      bgColor = const Color(0xFFF1F3F5);
-      textColor = const Color(0xFF616161);
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove("session_reg_id");
+    await prefs.remove("session_mobile");
+    await prefs.remove("session_email");
+    await prefs.remove("session_name");
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
-  return Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 14)),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 4),
-      SizedBox(
-        width: 70,
-        child: LinearProgressIndicator(
-          minHeight: 4,
-          value: tierProgress.clamp(0.02, 1.0),
-          backgroundColor: Colors.grey.shade300,
-          valueColor: AlwaysStoppedAnimation(textColor),
-        ),
-      ),
-    ],
+Widget buildTopTierStatus() {
+  return TierPointsSwapWidget(
+    rewardPoints: rewardPoints,
+    tier: backendTier,
   );
 }
+
 
 Widget buildKycStatusBadge() {
   final bool verified = isKycCompleted;
@@ -385,6 +314,7 @@ void initState() {
   _loadAppVersion();
   _checkAndAuthenticate(); 
 
+
   if (widget.initialTab == "card") {
     currentIndex = 0;
   } else if (widget.initialTab == "wallet") {
@@ -401,6 +331,7 @@ void initState() {
   _loadUnreadCount();
   _refreshStudentState();
 }
+
 
 Future<void> _persistRegId() async {
   final prefs = await SharedPreferences.getInstance();
@@ -513,10 +444,11 @@ Future<void> _refreshStudentState() async {
     final data = await ApiService.getStudentDetails(widget.regId);
     if (!mounted) return;
 
-    final double spent = double.tryParse(
-      (data["total_spent"] ?? data["totalSpent"] ?? 0).toString(),
-    ) ?? 0.0;
+    final int points =
+    int.tryParse((data["reward_points"] ?? 0).toString()) ?? 0;
 
+    final String tier =
+        (data["tier"] ?? "silver").toString().toLowerCase();
 
     final double percent =
         double.tryParse(data["kyc_completion_percent"].toString()) ?? 0.0;
@@ -528,7 +460,9 @@ Future<void> _refreshStudentState() async {
       upiId = data["upi_id"];
       profileImageUrl = data["profile_image"];
 
-      totalSpent = spent;     
+      rewardPoints = points;
+      backendTier = tier;
+  
 
       kycProgress = percent / 100;
       isKycCompleted = kycProgress == 1.0;
@@ -539,27 +473,33 @@ Future<void> _refreshStudentState() async {
 
 
 double get tierProgress {
-  if (totalSpent >= 250000) return 1.0;
-  if (totalSpent >= 175000) {
-    return ((totalSpent - 175000) / 75000).clamp(0.0, 1.0);
+  if (rewardPoints >= 1501) return 1;
+
+  if (rewardPoints >= 901) {
+    return ((rewardPoints - 901) / 600).clamp(0, 1);
   }
-  if (totalSpent >= 100000) {
-    return ((totalSpent - 100000) / 75000).clamp(0.0, 1.0);
+
+  if (rewardPoints >= 401) {
+    return ((rewardPoints - 401) / 500).clamp(0, 1);
   }
-  return (totalSpent / 50000).clamp(0.0, 1.0);
+
+  return (rewardPoints / 400).clamp(0, 1);
 }
+
 
 
 IconData get tierIcon {
-  if (computedTier == "platinum") return Icons.diamond;
-  if (computedTier == "gold") return Icons.emoji_events;
+  if (backendTier == "diamond") return Icons.diamond;
+  if (backendTier == "platinum") return Icons.diamond;
+  if (backendTier == "gold") return Icons.emoji_events;
   return Icons.star;
 }
 
+
 Color get tierColor {
-  if (computedTier == "diamond") return const Color(0xFF00C2FF);
-  if (computedTier == "platinum") return Colors.blueGrey;
-  if (computedTier == "gold") return Colors.amber;
+  if (backendTier == "diamond") return const Color(0xFF00C2FF);
+  if (backendTier == "platinum") return Colors.blueGrey;
+  if (backendTier == "gold") return Colors.amber;
   return Colors.grey;
 }
 
@@ -569,9 +509,7 @@ Widget buildUserAvatar(double radius) {
   if (profileImageUrl != null && profileImageUrl!.isNotEmpty) {
     return CircleAvatar(
       radius: radius,
-      backgroundImage: NetworkImage(
-  "$profileImageUrl?ts=${DateTime.now().millisecondsSinceEpoch}",
-),
+      backgroundImage: NetworkImage(profileImageUrl!),
       backgroundColor: const Color(0xFFE8ECFF),
     );
   }
@@ -712,7 +650,7 @@ Widget build(BuildContext context) {
                   const SizedBox(height: 6),
 
                   // ---- TIER BADGE ----
-                  TierBadge(tier: computedTier),
+                  TierBadge(tier: backendTier),
                   const SizedBox(height: 8),
 
                   // ---- TIER PROGRESS BAR ----
@@ -732,13 +670,13 @@ Widget build(BuildContext context) {
                   ),
                   const SizedBox(height: 4),
 
-                 if (totalSpent < 250000)
+                 if (rewardPoints < 2200)
                   Text(
-                    totalSpent < 100000
-                        ? "₹${(100000 - totalSpent).round()} to reach Gold"
-                        : totalSpent < 175000
-                            ? "₹${(175000 - totalSpent).round()} to reach Platinum"
-                            : "₹${(250000 - totalSpent).round()} to reach Diamond",
+                    rewardPoints < 401
+                        ? "${401 - rewardPoints} pts to reach Gold"
+                        : rewardPoints < 901
+                            ? "${901 - rewardPoints} pts to reach Platinum"
+                            : "${1501 - rewardPoints} pts to reach Diamond",
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 11,
@@ -1175,15 +1113,10 @@ class TierBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-          tier == "diamond"
-              ? "💠"
-              : tier == "platinum"
-                  ? "💎"
-                  : tier == "gold"
-                      ? "🥇"
-                      : "🥈",
-            style: const TextStyle(fontSize: 14),
+          Image.asset(
+            getTierAsset(tier),
+            height: 16,
+            width: 16,
           ),
           const SizedBox(width: 6),
           Text(

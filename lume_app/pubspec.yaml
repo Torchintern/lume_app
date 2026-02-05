@@ -16,6 +16,7 @@ dependencies:
   # ================= API =================
   http: ^1.2.0
   geolocator: ^10.1.0
+  intl: ^0.18.0
   # ================= UI / FONTS =================
   google_fonts: ^6.1.0
   lottie: ^3.1.0
@@ -59,4 +60,5 @@ flutter:
     - assets/images/
     - assets/logos/
     - assets/banks/
+    - assets/tier/
 

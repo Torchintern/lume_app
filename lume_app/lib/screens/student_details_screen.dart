@@ -361,42 +361,46 @@ String _month(int m) {
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     aadhaarVerified
-                      ? Stack(
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Aadhaar Card Image
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Image.asset(
-                                "assets/images/aadhaar_card.png",
-                                width: double.infinity,
-                                height: 180,
-                                fit: BoxFit.cover,
-                              ),
+
+                            // Aadhaar Image
+                            Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.asset(
+                                    "assets/images/aadhaar_card.png",
+                                    width: double.infinity,
+                                    height: 180,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+
+                                // Verified Icon ONLY (no number overlay)
+                                const Positioned(
+                                  top: 12,
+                                  right: 12,
+                                  child: Icon(
+                                    Icons.verified,
+                                    color: Colors.green,
+                                    size: 28,
+                                  ),
+                                ),
+                              ],
                             ),
 
-                            // Aadhaar Number Overlay
-                            Positioned(
-                              bottom: 20,
-                              left: 20,
+                            const SizedBox(height: 10),
+                            Center(
                               child: Text(
                                 "XXXX XXXX ${details!["aadhaar_last4"]}",
+                                textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   fontSize: 18,
                                   letterSpacing: 2,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.black,
                                 ),
-                              ),
-                            ),
-
-                            // Verified Icon
-                            const Positioned(
-                              top: 12,
-                              right: 12,
-                              child: Icon(
-                                Icons.verified,
-                                color: Colors.green,
-                                size: 28,
                               ),
                             ),
                           ],
@@ -449,42 +453,45 @@ String _month(int m) {
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     panVerified
-                      ? Stack(
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // PAN Card Image
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Image.asset(
-                                "assets/images/pan_card.png",
-                                width: double.infinity,
-                                height: 180,
-                                fit: BoxFit.cover,
-                              ),
+
+                            // PAN Image + Verified Icon
+                            Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.asset(
+                                    "assets/images/pan_card.png",
+                                    width: double.infinity,
+                                    height: 180,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+
+                                const Positioned(
+                                  top: 12,
+                                  right: 12,
+                                  child: Icon(
+                                    Icons.verified,
+                                    color: Colors.green,
+                                    size: 28,
+                                  ),
+                                ),
+                              ],
                             ),
 
-                            // PAN Number Overlay
-                            Positioned(
-                              bottom: 20,
-                              left: 20,
+                            const SizedBox(height: 10),
+                            Center(
                               child: Text(
                                 details!["pan_masked"] ?? "",
+                                textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   fontSize: 18,
                                   letterSpacing: 2,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.black,
                                 ),
-                              ),
-                            ),
-
-                            // Verified Badge
-                            const Positioned(
-                              top: 12,
-                              right: 12,
-                              child: Icon(
-                                Icons.verified,
-                                color: Colors.green,
-                                size: 28,
                               ),
                             ),
                           ],

@@ -143,11 +143,13 @@ class ApiService {
     "pan_masked": data["pan_masked"],
     "wallet_status": data["wallet_status"],
     "kyc_completion_percent": data["kyc_completion_percent"] ?? 0,
-    "total_spent": data["total_spent"] ?? 0,
+    "reward_points": data["reward_points"] ?? 0,
     "tier": data["tier"] ?? "silver",
+    "tier_cycle_start": data["tier_cycle_start"],
+    "total_spent": data["total_spent"] ?? 0,
     "server_time": data["server_time"] ?? "",
-  "weather_temp": data["weather_temp"] ?? 0,
-  "weather_condition": data["weather_condition"] ?? "",
+    "weather_temp": data["weather_temp"] ?? 0,
+    "weather_condition": data["weather_condition"] ?? "",
 
   };
 }
@@ -777,7 +779,30 @@ static Future<Map<String, dynamic>> getScholarApplicationStatus(int regId) async
     "status": null,
   };
 }
+// ======= Points History ========
+static Future<List<dynamic>> getPointsHistory(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/rewards/points-history/$regId"),
+  );
 
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return [];
+}
+// ====== Reward Cycle ==========
+static Future<Map<String, dynamic>> getRewardCycle() async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/rewards/cycle"),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return {};
+}
 
 
 

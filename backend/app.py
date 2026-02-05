@@ -6,7 +6,7 @@ import bcrypt
 import os
 from flask import send_from_directory
 from datetime import datetime
-
+import math
 def hash_pin(pin: str) -> str:
     return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
 
@@ -99,13 +99,18 @@ def register_student():
     # Create registered student
     c.execute("""
         INSERT INTO registered_students (
-            student_id,
-            aadhaar_verified,
-            pan_verified,
-            upi_id
-        )
-        VALUES (%s, 0, 0, NULL)
-    """, (student["id"],))
+        student_id,
+        aadhaar_verified,
+        pan_verified,
+        upi_id,
+        reward_points,
+        tier,
+        tier_cycle_start
+    )
+    VALUES (%s,0,0,NULL,0,'silver',%s)
+    """, (student["id"],
+          get_cycle_start().date()
+          ))
 
     reg_id = c.lastrowid
 
@@ -222,7 +227,8 @@ def upload_profile_image():
     upload_dir = "uploads"
     os.makedirs(upload_dir, exist_ok=True) 
 
-    filename = f"profile_{reg_id}.jpg"
+    timestamp = int(datetime.now().timestamp())
+    filename = f"profile_{reg_id}_{timestamp}.jpg"
     path = os.path.join(upload_dir, filename)
 
     file.save(path)
@@ -269,6 +275,8 @@ def student_details(reg_id):
         rs.pan_masked,
         rs.kyc_completion_percent,
         rs.tier,
+        rs.reward_points,
+        rs.tier_cycle_start,
         rs.total_spent AS total_spent,
         w.status AS wallet_status
         FROM registered_students rs
@@ -815,7 +823,7 @@ def wallet_to_wallet_transfer():
             "wallet",
             receiver["full_name"]
         )
-        update_user_tier(conn, c, sender_reg_id)
+        update_user_points_and_tier(conn, c, sender_reg_id, amount)
 
         conn.commit()
         return {"message": "TRANSFER_SUCCESS"}, 200
@@ -970,7 +978,7 @@ def wallet_to_upi_payment():
                 "upi",
                 upi_name
             )
-        update_user_tier(conn, c, sender_id)
+        update_user_points_and_tier(conn, c, sender_id, amount)
 
         conn.commit()
         return {"message": "UPI_PAYMENT_SUCCESS"}, 200
@@ -1091,7 +1099,7 @@ def wallet_to_wallet_transfer_internal(sender_id, receiver_id, receiver_upi, amo
             "transfer",
             "wallet"
         )
-        update_user_tier(conn, c, sender_id)
+        update_user_points_and_tier(conn, c, sender_id, amount)
         conn.commit()
         return {"message": "TRANSFER_SUCCESS"}, 200
 
@@ -1882,8 +1890,12 @@ def verify_add_money():
             SET status='success', failure_reason=NULL
             WHERE id=%s
         """, (txn_id,))
-        update_user_tier(conn, c, txn["sender_reg_id"])
-
+        update_user_points_and_tier(
+            conn,
+            c,
+            txn["sender_reg_id"],
+            txn["amount"]
+        )
 
         #  Save card ONLY if checkbox selected
         if d.get("save_card") is True:
@@ -2015,36 +2027,6 @@ def auto_cancel_expired_pending_transactions():
         c.close()
         conn.close()
         
-# ==== Tier =====
-def update_user_tier(conn, c, reg_id):
-    c.execute("""
-        SELECT IFNULL(SUM(CAST(amount AS DECIMAL(10,2))), 0) AS total
-        FROM wallet_transactions
-        WHERE sender_reg_id = %s
-          AND status = 'success'
-          AND (
-                txn_type IN ('transfer', 'upi')
-          )
-    """, (reg_id,))
-
-    total = float(c.fetchone()["total"] or 0)
-
-    if total >= 250000:
-        tier = "diamond"
-    elif total >= 175000:
-        tier = "platinum"
-    elif total >= 100000:
-        tier = "gold"
-    else:
-        tier = "silver"
-
-    c.execute("""
-        UPDATE registered_students
-        SET total_spent=%s,
-            tier=%s
-        WHERE id=%s
-    """, (total, tier, reg_id))
-
 # ============= Create Scholar Application =================    
 @app.route("/api/scholar/application", methods=["POST"])
 def create_scholar_application():
@@ -2158,10 +2140,98 @@ def get_scholar_application_status(reg_id):
         "hasApplication": True,
         "status": row["status"]  
     }, 200
+# ======== Tier =========
+def update_user_points_and_tier(conn, c, reg_id, amount):
+    
+    reset_cycle_if_needed(conn, c, reg_id)
 
+    points = max(1, calculate_points(amount))
+    c.execute("""
+        UPDATE registered_students
+        SET reward_points = reward_points + %s
+        WHERE id = %s
+    """, (points, reg_id))
+
+    c.execute("""
+        SELECT reward_points
+        FROM registered_students
+        WHERE id=%s
+    """, (reg_id,))
+
+    total_points = c.fetchone()["reward_points"]
+
+    tier = tier_from_points(total_points)
+
+    c.execute("""
+        UPDATE registered_students
+        SET tier=%s
+        WHERE id=%s
+    """, (tier, reg_id))
+
+# ===== Tier Cycle Helper =====
+def get_cycle_start():
+    today = datetime.now()
+
+    month = today.month
+
+    if month <= 3:
+        return datetime(today.year, 1, 1)
+    elif month <= 6:
+        return datetime(today.year, 4, 1)
+    elif month <= 9:
+        return datetime(today.year, 7, 1)
+    else:
+        return datetime(today.year, 10, 1)
+    
+# ===== Reset Cycle =====
+def reset_cycle_if_needed(conn, c, reg_id):
+    cycle_start = get_cycle_start().date()
+
+    c.execute("""
+        SELECT tier_cycle_start
+        FROM registered_students
+        WHERE id=%s
+    """, (reg_id,))
+
+    row = c.fetchone()
+
+    # FIRST TIME USER → SET CYCLE ONLY
+    if row and row["tier_cycle_start"] is None:
+        c.execute("""
+            UPDATE registered_students
+            SET tier_cycle_start = %s
+            WHERE id = %s
+        """, (cycle_start, reg_id))
+        return
+
+    # NEW CYCLE → RESET
+    if row and row["tier_cycle_start"] != cycle_start:
+        c.execute("""
+            UPDATE registered_students
+            SET
+                reward_points = 0,
+                tier = 'silver',
+                tier_cycle_start = %s
+            WHERE id = %s
+        """, (cycle_start, reg_id))
+
+
+# ====== Calculate Points ======
+def calculate_points(amount):
+    points = math.ceil(amount / 25)
+    return min(points, 120)
+
+# ===== Points from tier =====
+def tier_from_points(points):
+    if points >= 1501:
+        return "diamond"
+    elif points >= 901:
+        return "platinum"
+    elif points >= 401:
+        return "gold"
+    return "silver"
 
 #========================= RUN=========================
-
 """if __name__ == "__main__":
     app.run(debug=True)"""
 if __name__ == "__main__":
