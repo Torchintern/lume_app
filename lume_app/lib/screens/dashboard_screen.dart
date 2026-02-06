@@ -528,7 +528,6 @@ Widget buildUserAvatar(double radius) {
 }
 
 
-
   @override
 Widget build(BuildContext context) {
   if (_checkingLock) {

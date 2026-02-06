@@ -2,29 +2,32 @@
 
     <!-- ================= PERMISSIONS ================= -->
 
+    <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-
 
     <!-- Biometrics -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
 
-    <!-- Notifications -->
+    <!-- Notifications (Android 13+) -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         android:required="false" />
 
-    <!-- Media -->
+    <!-- Media Access (Android 13+) -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES"
         android:required="false" />
 
-    <!-- Legacy storage -->
+    <!-- Legacy Storage (Android <= 12) -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"
@@ -45,9 +48,8 @@
         android:label="lume_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="false"
+        android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
-
         android:enableOnBackInvokedCallback="true">
 
         <activity

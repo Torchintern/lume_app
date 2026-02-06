@@ -6,6 +6,9 @@ import 'dart:ui' as ui;
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:gallery_saver_plus/gallery_saver.dart';
+
 
 class MyQrScreen extends StatefulWidget {
   final String name;
@@ -26,17 +29,37 @@ class MyQrScreen extends StatefulWidget {
 }
 
 class _MyQrScreenState extends State<MyQrScreen> {
-  final GlobalKey qrKey = GlobalKey();
   final TextEditingController amountCtrl = TextEditingController();
-
+  Color selectedBgColor = const Color(0xFFE86A6A); 
+  Color savedBgColor = const Color(0xFFE86A6A);
+  bool showSaveButton = false;
+  final List<Color> bgColors = [
+    Color(0xFFE86A6A),
+    Color(0xFFEF5350),
+    Color(0xFFEC407A),
+    Color(0xFFAB47BC),
+    Color(0xFF7E57C2),
+    Color(0xFF5C6BC0),
+    Color(0xFF42A5F5),
+    Color(0xFF26A69A),
+    Color(0xFF66BB6A),
+    Color(0xFFFFA726),
+  ];
+  final GlobalKey shareQrKey = GlobalKey();
   bool amountQrGenerated = false;
   String generatedAmount = "";
+  bool copied = false;
+  bool showSavedAnimation = false;
+  bool isSharingMode = false;
+ 
 
-  @override
+ @override
   void initState() {
     super.initState();
     _resetQrState();
+     loadSavedColor();
   }
+
 
   void _resetQrState() {
     amountQrGenerated = false;
@@ -68,6 +91,90 @@ class _MyQrScreenState extends State<MyQrScreen> {
         "&pn=$encodedName"
         "&cu=INR";
   }
+
+  Future<void> saveColorToPrefs(Color color) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt("qr_bg_color", color.value);
+  }
+
+
+Future<void> loadSavedColor() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final colorValue = prefs.getInt("qr_bg_color");
+
+    if (colorValue != null) {
+      setState(() {
+        savedBgColor = Color(colorValue);
+        selectedBgColor = Color(colorValue);
+      });
+    }
+  }
+
+  // === copy ====
+  Future<void> handleCopy() async {
+  await Clipboard.setData(
+    ClipboardData(text: widget.upiId),
+  );
+
+  setState(() => copied = true);
+
+  Future.delayed(const Duration(seconds: 2), () {
+    if (mounted) {
+      setState(() => copied = false);
+    }
+  });
+}
+
+
+  // ===== ShareQR ==========
+ Future<void> shareQrImage() async {
+  try {
+    final overlay = Overlay.of(context);
+
+    late OverlayEntry entry;
+
+    entry = OverlayEntry(
+      builder: (context) => Material(
+        color: Colors.transparent,
+        child: Center(
+          child: RepaintBoundary(
+            key: shareQrKey,
+            child: buildShareCard(),
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(entry);
+
+    // Wait for render frame
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    final boundary =
+        shareQrKey.currentContext!.findRenderObject()
+            as RenderRepaintBoundary;
+
+    final image = await boundary.toImage(pixelRatio: 3);
+
+    final byteData =
+        await image.toByteData(format: ui.ImageByteFormat.png);
+
+    final pngBytes = byteData!.buffer.asUint8List();
+
+    final file = File("${Directory.systemTemp.path}/qr_share.png");
+
+    await file.writeAsBytes(pngBytes);
+
+    entry.remove();
+
+    await Share.shareXFiles([XFile(file.path)]);
+  } catch (e) {
+    _showResultDialog("Share failed", success: false);
+  }
+}
+
+
 
   // ================= AMOUNT DIALOG =================
   Future<void> showAmountDialog() async {
@@ -162,6 +269,34 @@ class _MyQrScreenState extends State<MyQrScreen> {
     }
     return false;
   }
+  // Background Color
+  Widget buildColorPicker() {
+  return Container(
+    padding: const EdgeInsets.all(20),
+    child: Wrap(
+      spacing: 14,
+      runSpacing: 14,
+      children: bgColors.map((color) {
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              selectedBgColor = color;
+              showSaveButton = selectedBgColor != savedBgColor;
+            });
+            Navigator.pop(context);
+          },
+          child: CircleAvatar(
+            radius: 24,
+            backgroundColor: color,
+            child: selectedBgColor == color
+                ? const Icon(Icons.check, color: Colors.white)
+                : null,
+          ),
+        );
+      }).toList(),
+    ),
+  );
+}
 
   // ================= RESULT DIALOG =================
   void _showResultDialog(String message, {bool success = true}) {
@@ -202,39 +337,192 @@ class _MyQrScreenState extends State<MyQrScreen> {
 
   // ================= DOWNLOAD QR =================
   Future<void> downloadQr(BuildContext context) async {
-    try {
-      final hasPermission = await _requestPermission();
-      if (!hasPermission) return;
+  try {
+    final hasPermission = await _requestPermission();
+    if (!hasPermission) return;
 
-      final boundary =
-          qrKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+    final overlay = Overlay.of(context);
 
-      final image = await boundary.toImage(pixelRatio: 3.0);
-      final byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+    late OverlayEntry entry;
 
-      final pngBytes = byteData!.buffer.asUint8List();
-      final directory = Directory(
-        "/storage/emulated/0/Pictures/LUME",
-      );
+    entry = OverlayEntry(
+      builder: (context) => Material(
+        color: Colors.transparent,
+        child: Center(
+          child: RepaintBoundary(
+            key: shareQrKey,
+            child: buildShareCard(),
+          ),
+        ),
+      ),
+    );
 
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
+    overlay.insert(entry);
 
-      final file = File(
-        "${directory.path}/LUME_QR_${DateTime.now().millisecondsSinceEpoch}.png",
-      );
+    await Future.delayed(const Duration(milliseconds: 300));
 
-      await file.writeAsBytes(pngBytes);
+    final boundary =
+        shareQrKey.currentContext!.findRenderObject()
+            as RenderRepaintBoundary;
 
-      if (!context.mounted) return;
-      _showResultDialog("QR code saved to gallery");
-    } catch (_) {
-      if (!context.mounted) return;
-      _showResultDialog("Failed to save QR code", success: false);
-    }
+    final image = await boundary.toImage(pixelRatio: 3);
+
+    final byteData =
+        await image.toByteData(format: ui.ImageByteFormat.png);
+
+    final pngBytes = byteData!.buffer.asUint8List();
+
+    final file = File(
+      "${Directory.systemTemp.path}/qr_download.png",
+    );
+
+    await file.writeAsBytes(pngBytes);
+
+    /// Save to Gallery
+    await GallerySaver.saveImage(file.path);
+
+    entry.remove();
+
+    if (!context.mounted) return;
+    _showResultDialog("QR saved to gallery");
+
+  } catch (e) {
+    _showResultDialog("Failed to save QR", success: false);
   }
+}
+
+
+  // share screen
+  Widget buildShareCard() {
+  return Container(
+    color: Colors.white, 
+    padding: const EdgeInsets.all(24),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+
+ Text(
+  widget.name,
+  maxLines: 1,
+  overflow: TextOverflow.ellipsis,
+  style: const TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.bold,
+    color: Colors.black,
+  ),
+),
+
+
+
+
+        const SizedBox(height: 24),
+
+        Container(
+          width: 320,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: selectedBgColor,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+
+              Image.asset("assets/images/upi.png", height: 28),
+
+              const SizedBox(height: 20),
+
+              Container(
+                width: 260,
+                height: 260,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Stack(
+  alignment: Alignment.center,
+  children: [
+
+    QrImageView(
+      data: upiUri,
+      size: 228,
+      backgroundColor: Colors.transparent,
+    ),
+    CircleAvatar(
+  radius: 26,
+  backgroundColor: Colors.white,
+  child: CircleAvatar(
+    radius: 24,
+    backgroundImage: widget.profileImageUrl != null &&
+            widget.profileImageUrl!.isNotEmpty
+        ? NetworkImage(widget.profileImageUrl!)
+        : null,
+    child: widget.profileImageUrl == null ||
+            widget.profileImageUrl!.isEmpty
+        ? Text(
+            initials,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          )
+        : null,
+  ),
+),
+
+  ],
+),
+
+              ),
+
+              const SizedBox(height: 18),
+
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+child: Center(
+  child: Text(
+    widget.upiId,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    textAlign: TextAlign.center,
+    style: const TextStyle(
+      fontWeight: FontWeight.w600,
+      fontSize: 16,
+      color: Colors.black,
+    ),
+  ),
+),
+
+
+
+
+              ),
+
+              if (amountQrGenerated) ...[
+                const SizedBox(height: 12),
+                Text(
+                  "₹ $generatedAmount",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -249,12 +537,6 @@ class _MyQrScreenState extends State<MyQrScreen> {
         centerTitle: true,
         actions: widget.walletActive
             ? [
-                IconButton(
-                  icon: const Icon(Icons.share),
-                  onPressed: () => Share.share(
-                    "${widget.name}\n${widget.upiId}\n\nPay via UPI:\n$upiUri",
-                  ),
-                ),
                 IconButton(
                   icon: const Icon(Icons.currency_rupee),
                   onPressed: showAmountDialog,
@@ -271,85 +553,288 @@ class _MyQrScreenState extends State<MyQrScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 32),
-                Text(
-                  widget.name,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  
+                Stack(
+  alignment: Alignment.topCenter,
+  children: [
+
+    /// MAIN QR CONTENT
+    RepaintBoundary(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.name,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+
+          const SizedBox(height: 36),
+
+          Center(
+            child: Container(
+              width: 320,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: selectedBgColor,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Column(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+
+    Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+
+        if (!isSharingMode)
+          GestureDetector(
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                builder: (_) => buildColorPicker(),
+              );
+            },
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.white,
+              child: Image.asset(
+                "assets/images/star.png",
+                width: 16,
+              ),
+            ),
+          )
+        else
+          const SizedBox(width: 36),
+
+        /// UPI LOGO
+        Image.asset(
+          "assets/images/upi.png",
+          height: 28,
+        ),
+
+        if (!isSharingMode)
+          GestureDetector(
+            onTap: shareQrImage,
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.white,
+              child: Image.asset(
+                "assets/images/share.png",
+                width: 16,
+              ),
+            ),
+          )
+        else
+          const SizedBox(width: 36),
+      ],
+    ),
+
+    const SizedBox(height: 20),
+
+    /// ===== QR BOX =====
+    Container(
+      width: 260,
+      height: 260,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F2F2).withOpacity(0.92),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Stack(
+  alignment: Alignment.center,
+  children: [
+
+    /// QR IMAGE
+    QrImageView(
+      data: upiUri,
+      size: 228,
+      backgroundColor: Colors.transparent,
+    ),
+
+    /// PROFILE IMAGE CENTER
+    CircleAvatar(
+      radius: 26,
+      backgroundColor: Colors.white,
+      child: CircleAvatar(
+        radius: 24,
+        backgroundColor: Colors.black,
+        backgroundImage:
+            widget.profileImageUrl != null &&
+                    widget.profileImageUrl!.isNotEmpty
+                ? NetworkImage(widget.profileImageUrl!)
+                : null,
+        child: widget.profileImageUrl == null ||
+                widget.profileImageUrl!.isEmpty
+            ? Text(
+                initials,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  widget.upiId,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-                const SizedBox(height: 36),
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black12, blurRadius: 12),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            RepaintBoundary(
-                              key: qrKey,
-                              child: QrImageView(
-                                data: upiUri,
-                                size: 260,
-                                backgroundColor: Colors.white,
-                              ),
-                            ),
-                            CircleAvatar(
-                              radius: 28,
-                              backgroundColor: const Color(0xFFE8ECFF),
-                              backgroundImage: widget.profileImageUrl != null &&
-                                      widget.profileImageUrl!.isNotEmpty
-                                  ? NetworkImage(widget.profileImageUrl!)
-                                  : null,
-                              child: widget.profileImageUrl == null ||
-                                      widget.profileImageUrl!.isEmpty
-                                  ? Text(
-                                      initials,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
-                                        color: Color(0xFF4C6EF5),
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                          ],
+              )
+            : null,
+      ),
+    ),
+  ],
+),
+
+    ),
+
+    const SizedBox(height: 18),
+
+    /// ===== UPI ID BOX =====
+    Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 10,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.upiId,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (!isSharingMode) ...[
+            const SizedBox(width: 10),
+  GestureDetector(
+  onTap: handleCopy,
+  child: AnimatedSwitcher(
+    duration: const Duration(milliseconds: 250),
+    child: copied
+        ? const Icon(
+            Icons.check_circle,  
+            key: ValueKey("tick"),
+            color: Colors.green,
+            size: 22,
+          )
+        : const Icon(
+            Icons.copy,
+            key: ValueKey("copy"),
+            size: 20,
+          ),
+  ),
+)
+
+
+          ]
+        ],
+      ),
+    ),
+
+    if (amountQrGenerated) ...[
+      const SizedBox(height: 12),
+      Text(
+        "₹ $generatedAmount",
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ],
+  ],
+),
+
+            ),
+          ),
+        ],
+      ),
+    ),
+  
+
+  ],
+),
+          
+                  const SizedBox(height: 18),  
+                  
+                if (showSaveButton)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 18),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          savedBgColor = selectedBgColor;
+                          showSaveButton = false;
+                          showSavedAnimation = true;
+                        });
+
+                        saveColorToPrefs(selectedBgColor);
+
+                        Future.delayed(const Duration(seconds: 2), () {
+                          if (mounted) {
+                            setState(() {
+                              showSavedAnimation = false;
+                            });
+                          }
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 36,
+                          vertical: 14,
                         ),
-                        if (amountQrGenerated && generatedAmount.isNotEmpty) ...[
-                          const SizedBox(height: 14),
-                          Text(
-                            "₹ $generatedAmount",
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        "Save",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 400),
+                    child: showSavedAnimation
+                        ? Container(
+                            key: const ValueKey("saved"),
+                            margin: const EdgeInsets.only(top: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade600,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check, color: Colors.white, size: 18),
+                                SizedBox(width: 6),
+                                Text(
+                                  "Saved",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox(),
+                  ),
+              
+
                 const Spacer(),
+
                 const Text(
                   "Powered by LUME",
                   style: TextStyle(color: Colors.grey),
