@@ -349,9 +349,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             ),
             ...entry.value.map(
               (txn) => Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16),
-                child: TransactionTile(txn: txn),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TransactionTile(
+                  txn: txn,
+                  regId: widget.regId, 
+                ),
               ),
             ),
           ],

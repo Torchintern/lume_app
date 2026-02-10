@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import '../screens/payment_result_screen.dart';
-
+import '/services/api_service.dart';
 class TransactionTile extends StatelessWidget {
   final dynamic txn;
-
+  final int regId;
   const TransactionTile({
     super.key,
     required this.txn,
+     required this.regId,
   });
 
   @override
@@ -49,23 +50,35 @@ class TransactionTile extends StatelessWidget {
         (txn["upi_id"] ?? "").toString().trim();
 
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PaymentResultScreen(
-              amount: (txn["amount"] as num).toDouble(),
-              status: txn["status"],
-              direction: txn["direction"],
-              payeeName: displayName,
-              payee: upiId,
+      onTap: () async {
+  final details = await ApiService.getStudentDetails(regId);
 
-              isWallet: txn["payment_type"] == "Wallet",
-              createdAt: txn["created_at"],
-            ),
-          ),
-        );
-      },
+  if (!context.mounted) return;
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PaymentResultScreen(
+        amount: (txn["amount"] as num).toDouble(),
+        status: txn["status"],
+        direction: txn["direction"],
+        payeeName: displayName,
+        payee: upiId,
+        isWallet: txn["payment_type"] == "Wallet",
+        createdAt: txn["created_at"],
+        note: txn["split_note"],
+        regId: regId,
+        fullName: details["full_name"] ?? "",
+        mobile: details["mobile"] ?? "",
+        upiId: details["upi_id"],
+        walletStatus: details["wallet_status"] ?? "inactive",
+        aadhaarVerified: details["aadhaar_verified"] ?? 0,
+        panVerified: details["pan_verified"] ?? 0,
+      ),
+    ),
+  );
+},
+
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),

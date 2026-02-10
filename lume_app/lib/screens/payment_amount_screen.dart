@@ -160,21 +160,35 @@ class _PaymentAmountScreenState
     if (!mounted) return;
     setState(() => paying = false);
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PaymentResultScreen(
-          amount: amount,
-          status: status,
-          direction: "debit",
-          payeeName: widget.payeeName.isNotEmpty
-              ? widget.payeeName
-              : widget.payee,
-          payee: widget.payee,
-          isWallet: !widget.payee.contains("@"),
-        ),
-      ),
-    );
+final details = await ApiService.getStudentDetails(widget.regId);
+
+Navigator.pushReplacement(
+  context,
+  MaterialPageRoute(
+    builder: (_) => PaymentResultScreen(
+      amount: amount,
+      status: status,
+      direction: "debit",
+
+      payeeName: widget.payeeName.isNotEmpty
+          ? widget.payeeName
+          : widget.payee,
+
+      payee: widget.payee,
+      isWallet: !widget.payee.contains("@"),
+      regId: widget.regId,
+      fullName: details["full_name"] ?? "",
+      mobile: details["mobile"] ?? "",
+      upiId: details["upi_id"],
+      walletStatus: details["wallet_status"] ?? "inactive",
+      aadhaarVerified: details["aadhaar_verified"] ?? 0,
+      panVerified: details["pan_verified"] ?? 0,
+    ),
+  ),
+);
+
+
+
   }
 
   void _showWalletPinRequiredDialog() {

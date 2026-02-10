@@ -8,6 +8,12 @@ class ApiService {
   static const Map<String, String> headers = {
     "Content-Type": "application/json",
   };
+  // ================= CURRENT USER CACHE =================
+static int? currentUserRegId;
+static String? currentUserMobile;
+static String? currentUserName;
+static String? currentUserProfileImage;
+
   // ================= Universities =================
   static Future<List<dynamic>> getUniversities() async {
     final res = await http.get(Uri.parse("$baseUrl/universities"));
@@ -86,8 +92,22 @@ class ApiService {
       throw Exception("INVALID_LOGIN_OTP");
     }
 
-    return jsonDecode(res.body);
-  }
+    final data = jsonDecode(res.body);
+    currentUserRegId = data["reg_id"];
+    currentUserMobile = data["mobile"];
+    currentUserName = data["full_name"];
+
+    try {
+  final profile = await getUserProfile(data["reg_id"]);
+  currentUserProfileImage = profile["profile_image"];
+} catch (_) {
+  currentUserProfileImage = null;
+}
+
+return data;
+
+
+      }
 
   // ================= REGISTRATION =================
   static Future<void> registerStudent({
@@ -452,22 +472,37 @@ static Future<void> creditWallet({
   );
 }
  // ========== Notifications ====================
+ static Future<List<dynamic>> getAllNotifications(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/notifications/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return [];
+}
+
  static Future<List<dynamic>> getUnreadNotifications(int regId) async {
   final res = await http.get(
-    Uri.parse("$baseUrl/transactions/unread/$regId"),
-    headers: headers,
+    Uri.parse("$baseUrl/notifications/unread/$regId"),
   );
 
-  return jsonDecode(res.body);
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return [];
 }
 
-static Future<void> markNotificationSeen(int txnId) async {
+
+static Future<void> markAllNotificationsRead(int regId) async {
   await http.post(
-    Uri.parse("$baseUrl/transactions/mark-seen"),
-    headers: headers,
-    body: jsonEncode({"transaction_id": txnId}),
+    Uri.parse("$baseUrl/notifications/mark-read/$regId"),
   );
 }
+
 
  static Future<int> getUnreadNotificationCount(int regId) async {
   final res = await http.get(
@@ -481,12 +516,9 @@ static Future<void> markNotificationSeen(int txnId) async {
   }
 }
 
-
-static Future<void> markAllNotificationsRead(int regId) async {
+static Future markNotificationRead(int notifId) async {
   await http.post(
-    Uri.parse("$baseUrl/notifications/mark-all-read"),
-    headers: {"Content-Type": "application/json"},
-    body: jsonEncode({"reg_id": regId}),
+    Uri.parse("$baseUrl/notifications/read/$notifId"),
   );
 }
 
@@ -802,6 +834,140 @@ static Future<Map<String, dynamic>> getRewardCycle() async {
   }
 
   return {};
+}
+
+// ================= SPLIT CREATE =================
+static Future<Map<String, dynamic>> createSplit({
+  required int creatorRegId,
+  required List<int> memberRegIds,
+  required double totalAmount,
+  required String splitType,
+  String? note,
+  List<double>? individualAmounts,
+
+}) async {
+  final Map<String, dynamic> body = {
+    "creator_reg_id": creatorRegId,
+    "members": memberRegIds,
+    "total_amount": totalAmount,
+    "split_type": splitType,
+
+  };
+  if (note != null && note.isNotEmpty) {
+    body["note"] = note;
+  }
+  if (individualAmounts != null && individualAmounts.isNotEmpty) {
+    body["individual_amounts"] = individualAmounts;
+  }
+  final res = await http.post(
+    Uri.parse("$baseUrl/split/create"),
+    headers: headers,
+    body: jsonEncode(body),
+  );
+  if (res.statusCode != 200) {
+  print("CREATE SPLIT FAILED");
+  print("STATUS: ${res.statusCode}");
+  print("BODY: ${res.body}"); 
+  throw Exception("FAILED_TO_CREATE_SPLIT");
+}
+
+  return jsonDecode(res.body);
+}
+
+// ================= GET MY SPLITS =================
+static Future<List<dynamic>> getMySplits(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/split/my/$regId"),
+    headers: headers,
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return [];
+}
+// ================= PAY SPLIT =================
+static Future<String> paySplit({
+  required int splitMemberId,
+  required int payerRegId,
+}) async {
+
+  final res = await http.post(
+    Uri.parse("$baseUrl/split/pay"),
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({
+      "split_member_id": splitMemberId,
+      "payer_reg_id": payerRegId,
+    }),
+  );
+
+  final data = jsonDecode(res.body);
+
+  if (res.statusCode == 200) {
+    return data["message"] ?? "SUCCESS";
+  } else {
+    throw Exception(data["message"] ?? "PAYMENT_FAILED");
+  }
+}
+
+
+static Future<bool> closeSplit({
+  required int splitId,
+  required int creatorRegId,
+}) async {
+
+  final res = await http.post(
+    Uri.parse("$baseUrl/split/close"),
+    headers: headers,
+    body: jsonEncode({
+      "split_id": splitId,
+      "creator_reg_id": creatorRegId,
+    }),
+  );
+
+  return res.statusCode == 200;
+}
+
+
+
+// split api req
+static Future<List<dynamic>> getSplitRequests(int regId) async {
+
+  final res = await http.get(
+    Uri.parse("$baseUrl/split/requests/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return [];
+}
+// Get Split Members status
+static Future<Map<String, dynamic>> getSplitMemberStatus(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/split/member-status/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return {};
+}
+
+// Get Created Splits
+static Future<List<dynamic>> getCreatedSplits(
+  int regId,
+  String splitType,
+) async {
+
+  final res = await http.get(
+    Uri.parse("$baseUrl/split/created/$regId?type=$splitType"),
+  );
+
+  return jsonDecode(res.body);
 }
 
 

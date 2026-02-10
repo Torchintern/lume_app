@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:async';
+import '../widgets/liquid_progress_bar.dart';
 
 class StudentDetailsScreen extends StatefulWidget {
   final int regId;
@@ -307,29 +308,36 @@ String _month(int m) {
             children: [
               // ================= KYC STATUS =================
               if (kycProgress < 1.0) ...[
-                _card(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("KYC Status",
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 10),
-                      LinearProgressIndicator(
-                        value: kycProgress,
-                        minHeight: 8,
-                        backgroundColor: Colors.grey.shade300,
-                        color: Colors.green,
+              _card(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "KYC Status",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    LiquidKycProgressBar(
+                      progress: kycProgress,
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Text(
+                      "KYC ${(kycProgress * 100).toInt()}%",
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "KYC ${(kycProgress * 100).toInt()}%",
-                        style: const TextStyle(color: Colors.orange),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
-              ],
+              ),
+              const SizedBox(height: 20),
+            ],
+
 
               // ================= GREETING CARD =================
               _greetingCard(),

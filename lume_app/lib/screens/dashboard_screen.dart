@@ -32,6 +32,8 @@ import 'package:lume_app/screens/app_settings_screen.dart';
 import 'package:local_auth/local_auth.dart';
 import '../utils/tier_assets.dart';
 import '/widgets/tier_points_swap_widget.dart';
+import '../widgets/liquid_progress_bar.dart';
+import 'payment_result_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -42,6 +44,8 @@ class DashboardScreen extends StatefulWidget {
   final int aadhaarVerified;
   final int panVerified;
   final String initialTab;
+  final int? openSplitId;
+
   const DashboardScreen({
     super.key,
     required this.regId,
@@ -52,6 +56,7 @@ class DashboardScreen extends StatefulWidget {
     required this.aadhaarVerified,
     required this.panVerified,
     this.initialTab = "pay",
+    this.openSplitId,
   });
 
   @override
@@ -1021,6 +1026,7 @@ Widget build(BuildContext context) {
                       kycProgress: kycProgress,
                       isKycCompleted: isKycCompleted,
                       onKycUpdated: _refreshStudentState,
+                       openSplitId: widget.openSplitId, 
                     ),
 
                     const _RewardsView(),
@@ -1139,12 +1145,15 @@ class _PayView extends StatefulWidget {
   final double kycProgress;
   final bool isKycCompleted;
   final VoidCallback onKycUpdated;
+  final int? openSplitId;
   
   const _PayView({
     required this.regId,
     required this.kycProgress,
     required this.isKycCompleted,
     required this.onKycUpdated,
+    this.openSplitId,
+
   });
 
   @override
@@ -1160,6 +1169,10 @@ class _PayViewState extends State<_PayView>
   List<dynamic> paySuggestions = [];
   List<dynamic> recentPayees = [];
   bool loadingRecents = true;
+  List<dynamic> splitRequests = [];
+  bool loadingSplitRequests = true;
+  bool showSplitSection = false;
+
 
   List<Map<String, dynamic>> dedupeRecentPayees(List<dynamic> list) {
   final seen = <String>{};
@@ -1182,21 +1195,87 @@ class _PayViewState extends State<_PayView>
     if (v is int) return v == 1;
     return false;
   }
+String getKycMessage() {
+  final dashboard =
+      context.findAncestorStateOfType<_DashboardScreenState>();
+
+  if (dashboard == null) return "";
+
+  if (dashboard.upiId == null || dashboard.upiId!.isEmpty) {
+    return "Verify your UPI ID to complete your profile and enjoy exclusive rewards";
+  }
+
+  if (!dashboard.aadhaarVerified) {
+    return "Complete Aadhaar KYC to activate wallet and unlock payments";
+  }
+
+  if (!dashboard.panVerified) {
+    return "Complete PAN verification to unlock higher transaction limits";
+  }
+
+  return "Your profile is fully verified. Enjoy all Lume benefits";
+}
 
   @override
-  void initState() {
-    super.initState();
-     _startInnerAnimationLoop();
-     _loadRecentPayees();
-     _loadBalance();
-     upiController.addListener(() {
+void initState() {
+  super.initState();
+
+  _startInnerAnimationLoop();
+  _loadRecentPayees();
+  _loadBalance();
+  _loadSplitRequests();
+  if (widget.openSplitId != null) {
+    Future.delayed(const Duration(milliseconds: 600), () {
+      _openSplitFromNotification(widget.openSplitId!);
+    });
+  }
+  upiController.addListener(() {
     if (mounted) setState(() {});
   });
-  }
+}
+
+
   @override
   void dispose() {
     super.dispose();
   }
+
+
+void _openSplitFromNotification(int splitId) async {
+
+  await _loadSplitRequests();
+
+  final split = splitRequests.firstWhere(
+    (s) => (s["split_id"] ?? s["id"]) == splitId,
+    orElse: () => null,
+  );
+
+  if (split != null) {
+    // future scroll logic
+  }
+}
+
+
+
+Future<void> _loadSplitRequests() async {
+  try {
+    final data =
+        await ApiService.getSplitRequests(widget.regId);
+
+    if (!mounted) return;
+
+    setState(() {
+
+      // SHOW SPLITS UNTIL CREATOR CLOSES
+      splitRequests = data;
+      loadingSplitRequests = false;
+    });
+
+  } catch (_) {
+    loadingSplitRequests = false;
+  }
+}
+
 
   void _startInnerAnimationLoop() async {
   while (mounted) {
@@ -1310,6 +1389,7 @@ Future<void> refreshBalance() async {
     } catch (_) {
     }
   }
+  
   Widget buildScannerAnimation() {
     return Container(
       height: 130,
@@ -1782,64 +1862,569 @@ if (!loadingRecents &&
         ),
 
         const SizedBox(height: 30),
+        
+// ================= SPLIT PAYMENTS BUTTON =================
+GestureDetector(
+  onTap: () async {
+    setState(() {
+      showSplitSection = !showSplitSection;
+    });
 
-// ================= KYC CARD =================
-if (!widget.isKycCompleted)
-  GestureDetector(
-    onTap: () async {
-      final updated = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => StudentDetailsScreen(
-            regId: widget.regId,
+    if (showSplitSection) {
+      await _loadSplitRequests();
+    }
+  },
+  child: Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: const [
+        BoxShadow(color: Colors.black12, blurRadius: 8),
+      ],
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.call_split, color: Color(0xFF4C6EF5)),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Text(
+            "Split Payments",
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-      );
-
-      if (updated == true) {
-       widget.onKycUpdated(); 
- 
-      }
-    },
-
-    child: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 8),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.orange,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                "KYC In Progress",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              Text(
-                "${(widget.kycProgress * 100).toInt()}%",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          LinearProgressIndicator(
-            value: widget.kycProgress,
-          ),
-        ],
-      ),
+        Icon(
+          showSplitSection
+              ? Icons.keyboard_arrow_up
+              : Icons.chevron_right,
+        ),
+      ],
     ),
   ),
+),
+
+const SizedBox(height: 12),
+
+AnimatedSize(
+  duration: const Duration(milliseconds: 350),
+  curve: Curves.easeInOut,
+  child: showSplitSection
+      ? Column(
+          children: splitRequests.map((split) {
+
+final members = split["members"] ?? [];
+
+
+
+// ===== SAFE PAID CHECK =====
+bool isPaidStatus(dynamic status) {
+  if (status == null) return false;
+  final s = status.toString().toLowerCase().trim();
+  return s == "paid";
+}
+
+// ===== FIND MY MEMBER (FIXED KEY HERE) =====
+Map<String, dynamic>? myMember;
+
+try {
+  myMember = members.firstWhere(
+    (m) => m["reg_id"] == widget.regId,   
+  );
+} catch (_) {
+  myMember = null;
+}
+
+// ===== USE BACKEND PAID FLAG (BEST METHOD) =====
+final myPaid =
+    myMember?["paid"] == true ||
+    isPaidStatus(myMember?["status"]);
+
+final myAmount = double.tryParse(
+  (myMember?["amount"] ?? 0).toString(),
+) ?? 0;
+
+final insufficientBalance = balance < myAmount;
+
+
+// ===== GROUP COMPLETED CHECK =====
+final isCompleted = members.every(
+  (m) => isPaidStatus(m["status"]),
+);
+final int creatorRegId =
+    int.tryParse(split["creator_reg_id"].toString()) ?? -1;
+
+final bool isCreator = creatorRegId == widget.regId;
+
+final bool isClosed =
+    split["closed"] == 1 ||
+    split["closed"] == true;
+
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 10),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+
+            // ===== HEADER =====
+            Row(
+              children: [
+
+                CircleAvatar(
+                  backgroundImage: (split["creator_image"] != null &&
+                          split["creator_image"].toString().isNotEmpty)
+                      ? NetworkImage(split["creator_image"])
+                      : null,
+                  child: (split["creator_image"] == null ||
+                          split["creator_image"].toString().isEmpty)
+                      ? Text(
+                          (split["creator_name"] ?? "U")[0]
+                              .toUpperCase(),
+                        )
+                      : null,
+                ),
+
+                const SizedBox(width: 10),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        split["creator_name"] ?? "",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        "Total ₹${split["total_amount"]}",
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ===== STATUS BADGE =====
+                if (isClosed)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      "Closed",
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isCompleted
+                          ? Colors.green.shade50
+                          : Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isCompleted ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                    child: Text(
+                      isCompleted ? "Completed" : "Pending",
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isCompleted ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                  ),
+
+                // ===== YOU PAID BADGE =====
+                if (myPaid)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.green),
+                    ),
+                    child: const Text(
+                      "You Paid",
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.green,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            const Text(
+              "Members",
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // ===== MEMBERS LIST =====
+            ...members.map<Widget>((m) {
+
+              final paid = isPaidStatus(m["status"]);
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundImage: (m["profile_image"] != null &&
+                              m["profile_image"].toString().isNotEmpty)
+                          ? NetworkImage(m["profile_image"])
+                          : null,
+                      child: (m["profile_image"] == null ||
+                              m["profile_image"].toString().isEmpty)
+                          ? Text(
+                              (m["name"] ?? "U")[0]
+                                  .toUpperCase(),
+                              style: const TextStyle(fontSize: 12),
+                            )
+                          : null,
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    Expanded(
+                      child: Text(
+                        m["name"] ?? "",
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+
+                    Text(
+                      "₹${m["amount"]}",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(width: 10),
+
+                    Icon(
+                      paid
+                          ? Icons.check_circle
+                          : Icons.pending,
+                      color: paid ? Colors.green : Colors.orange,
+                      size: 18,
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+            const SizedBox(height: 10),
+
+          // ===== PAY BUTTON =====
+            Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                // ===== CREATOR CLOSE BUTTON =====
+                if (isCreator && isCompleted && !isClosed)
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    onPressed: () async {
+                      final confirm = await showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text("Close Split?"),
+                          content: const Text(
+                            "This split will be marked as closed.\n\n"
+                            "No further payments will be allowed.",
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text("Cancel"),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text("Close Split"),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirm != true) return;
+
+                      final ok = await ApiService.closeSplit(
+                        splitId: split["split_id"] ?? split["id"],
+                        creatorRegId: widget.regId,
+                      );
+
+                      if (ok) {
+                        await _loadSplitRequests();
+
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Split closed successfully"),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    child: const Text("Close Split"),
+                  ),
+
+
+                // ===== MEMBER PAY BUTTON =====
+                if (!isCreator) ...[
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4C6EF5),
+                      disabledBackgroundColor: Colors.grey.shade400,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    onPressed: (myPaid || insufficientBalance || isClosed)
+                      ? null
+                      : () async {
+
+                          final verified = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PinVerifyScreen(
+                                regId: widget.regId,
+                                type: "wallet",
+                                amount: myAmount,
+                              ),
+                            ),
+                          );
+
+                          if (verified != true) return;
+
+                          try {
+
+                            await ApiService.paySplit(
+                              splitMemberId: myMember?["id"],  
+                              payerRegId: widget.regId,
+                            );
+
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PaymentResultScreen(
+                                amount: myAmount,
+                                status: "success",
+
+                                payeeName: split["creator_name"] ?? "",
+
+                                payee: split["creator_upi"] != null &&
+                                        split["creator_upi"].toString().isNotEmpty
+                                    ? split["creator_upi"]
+                                    : split["creator_mobile"] ?? "",
+
+                                note: split["note"],
+                                paymentMethod: "Wallet",
+                                txnTime: DateTime.now(),
+
+                                isWallet: true,
+                                regId: widget.regId,
+                                fullName: dashboardState?.widget.fullName ?? "",
+                                mobile: dashboardState?.widget.mobile ?? "",
+                                upiId: dashboardState?.widget.upiId,
+                                walletStatus: dashboardState?.widget.walletStatus ?? "",
+                                aadhaarVerified: dashboardState?.widget.aadhaarVerified ?? 0,
+                                panVerified: dashboardState?.widget.panVerified ?? 0,
+                                direction: "debit",
+                              ),
+                              ),
+                            );
+
+                            await _loadSplitRequests();
+                            await _loadBalance();
+
+                            final dashboard =
+                                context.findAncestorStateOfType<_DashboardScreenState>();
+
+                            await dashboard?.refreshWalletNow();
+                            await dashboard?._refreshStudentState();
+                            dashboard?.setState(() {});
+
+                          } catch (e) {
+
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PaymentResultScreen(
+                                  amount: myAmount,
+                                  status: "failed",
+                                  payeeName: split["creator_name"] ?? "",
+                                  payee: split["creator_mobile"] ?? "",
+                                  isWallet: true,
+                                  regId: widget.regId,
+                                  fullName: dashboardState?.widget.fullName ?? "",
+                                  mobile: dashboardState?.widget.mobile ?? "",
+                                  upiId: dashboardState?.widget.upiId,
+                                  walletStatus: dashboardState?.widget.walletStatus ?? "",
+                                  aadhaarVerified: dashboardState?.widget.aadhaarVerified ?? 0,
+                                  panVerified: dashboardState?.widget.panVerified ?? 0,
+                                  direction: "debit",
+                                ),
+                              ),
+                            );
+
+                          }
+                      },
+
+
+                    child: Text(
+                      isClosed
+                        ? "Closed"
+                        : myPaid
+                          ? "Paid"
+                          : insufficientBalance
+                            ? "Low Balance"
+                            : "Pay"
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (!isCreator && insufficientBalance && !myPaid)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  "Insufficient wallet balance",
+                  style: TextStyle(
+                    color: Colors.red.shade600,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList(),
+         )
+      : const SizedBox(),
+),
+
+
+// ================= KYC CARD =================
+  if (widget.kycProgress < 1.0)
+    GestureDetector(
+      onTap: () async {
+        final updated = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => StudentDetailsScreen(
+              regId: widget.regId,
+            ),
+          ),
+        );
+
+        if (updated == true) {
+          widget.onKycUpdated();
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 8),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+
+            Row(
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.orange,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  "KYC In Progress",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                Text(
+                  "${(widget.kycProgress * 100).toInt()}%",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            LiquidKycProgressBar(
+              progress: widget.kycProgress,
+            ),
+
+            const SizedBox(height: 10),
+            Text(
+              getKycMessage(),
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.black54,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+
 
 
       ],
@@ -2290,6 +2875,7 @@ class _TransactionHistoryCard extends StatelessWidget {
                 .take(5)
                 .map<Widget>((t) => TransactionTile(
                     txn: t,
+                     regId: regId,
                   ))
                 .toList(),
               ),

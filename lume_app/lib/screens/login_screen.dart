@@ -138,6 +138,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   controller.text,
                                   otp,
                                 );
+                               
+ApiService.currentUserRegId = res["reg_id"];
+ApiService.currentUserMobile = res["mobile"];
+ApiService.currentUserName = res["full_name"];
+try {
+  final profile = await ApiService.getUserProfile(res["reg_id"]);
+  ApiService.currentUserProfileImage = profile["profile_image"];
+} catch (_) {}
+
                                 final prefs =
                                     await SharedPreferences.getInstance();
                                 await prefs.setString(

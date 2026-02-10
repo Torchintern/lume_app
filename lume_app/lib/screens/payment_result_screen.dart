@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:share_plus/share_plus.dart';
+import '../widgets/split_people_sheet.dart';
+
 
 class PaymentResultScreen extends StatelessWidget {
   final double amount;
@@ -8,22 +10,44 @@ class PaymentResultScreen extends StatelessWidget {
   final String payeeName; // NAME from backend / runtime
   final String payee; // UPI ID / Mobile
   final bool isWallet;
-
-  /// debit | credit | topup
+  final int regId;
   final String direction;
-
   final String? createdAt;
+  final String fullName;
+  final String mobile;
+  final String? upiId;
+  final String walletStatus;
+  final int aadhaarVerified;
+  final int panVerified;
+  final String? customTitle;
+  final String? note;
+  final String? paymentMethod;
+  final DateTime? txnTime;
 
   const PaymentResultScreen({
-    super.key,
-    required this.amount,
-    required this.status,
-    required this.payeeName,
-    required this.payee,
-    required this.isWallet,
-    this.direction = "debit",
-    this.createdAt,
-  });
+  super.key,
+  required this.amount,
+  required this.status,
+  required this.payeeName,
+  required this.payee,
+  required this.isWallet,
+  required this.regId,
+  required this.fullName,
+  required this.mobile,
+  required this.upiId,
+  required this.walletStatus,
+  required this.aadhaarVerified,
+  required this.panVerified,
+  this.direction = "debit",
+  this.createdAt,
+  this.customTitle,
+  this.note,
+  this.paymentMethod,
+  this.txnTime,
+
+
+});
+
 
   // ================= LOTTIE =================
   String get lottieFile {
@@ -51,6 +75,8 @@ class PaymentResultScreen extends StatelessWidget {
 
   // ================= STATUS TEXT =================
   String get statusText {
+    if (customTitle != null) return customTitle!;
+
     if (status == "pending") return "Payment Pending";
     if (status == "failed") return "Payment Failed";
 
@@ -60,10 +86,13 @@ class PaymentResultScreen extends StatelessWidget {
     return "Payment Successful";
   }
 
+
   // ================= DATE FORMAT =================
   String get formattedTime {
-    final DateTime d =
-        DateTime.tryParse(createdAt ?? "") ?? DateTime.now();
+  final DateTime d =
+      txnTime ??
+      DateTime.tryParse(createdAt ?? "") ??
+      DateTime.now();
 
     return "${d.day.toString().padLeft(2, '0')} "
         "${_month(d.month)} "
@@ -94,7 +123,7 @@ class PaymentResultScreen extends StatelessWidget {
       isWallet && !payee.contains("@");
 
   String get paymentTypeText =>
-      _effectiveIsWallet ? "Wallet" : "UPI";
+    paymentMethod ?? (_effectiveIsWallet ? "Wallet" : "UPI");
 
   String get _idLabel =>
       _effectiveIsWallet ? "Mobile" : "UPI";
@@ -121,15 +150,30 @@ Date: $formattedTime
   Widget build(BuildContext context) {
     final bool isTopup = direction == "topup";
     final bool showSplit =
-        direction == "debit" || direction == "topup";
+    direction == "debit" &&
+    status == "success" &&
+    fullName.isNotEmpty;
+
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FC),
-      body: SafeArea(
-        child: Column(
+  backgroundColor: const Color(0xFFF7F8FC),
+  appBar: AppBar(
+    elevation: 0,
+    backgroundColor: Colors.transparent,
+    foregroundColor: Colors.black,
+    leading: IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        Navigator.pop(context);
+      },
+    ),
+  ),
+
+  body: SafeArea(
+     child: SingleChildScrollView(
+  child: Column(
           children: [
             const SizedBox(height: 40),
-
             SizedBox(
               height: 180,
               child: Lottie.asset(
@@ -194,6 +238,10 @@ Date: $formattedTime
                     _row("Payment Method", paymentTypeText),
                   ] else ...[
                     _row("To", displayName),
+
+                    if (note != null && note!.isNotEmpty)
+                      _row("Note", note!),
+
                     _row("To $_idLabel", payee.isNotEmpty ? payee : "-"),
                     _row("Payment Method", paymentTypeText),
                   ],
@@ -201,9 +249,7 @@ Date: $formattedTime
                 ],
               ),
             ),
-
-            const Spacer(),
-
+            const SizedBox(height: 20),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
@@ -219,7 +265,37 @@ Date: $formattedTime
                   if (showSplit)
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () {},
+                        onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                              ),
+                              builder: (_) => SplitPeopleSheet(
+                                totalAmount: amount,
+                                creatorRegId: regId,
+
+                                fullName: fullName,
+                                mobile: mobile,
+                                upiId: upiId,
+                                walletStatus: walletStatus,
+                                aadhaarVerified: aadhaarVerified,
+                                panVerified: panVerified,
+
+                                preSelectedUsers: isWallet
+                                    ? [
+                                        {
+                                          "reg_id": null,
+                                          "name": displayName,
+                                          "identifier": payee,
+                                          "profile_image": null,
+                                        }
+                                      ]
+                                    : null,
+                              ),
+                            );
+                          },
                         icon: const Icon(Icons.call_split),
                         label: const Text("Split"),
                       ),
@@ -256,6 +332,7 @@ Date: $formattedTime
           ],
         ),
       ),
+  ),
     );
   }
 

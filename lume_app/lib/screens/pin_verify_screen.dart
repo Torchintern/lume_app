@@ -7,16 +7,14 @@ import 'pin_settings_screen.dart';
 class PinVerifyScreen extends StatefulWidget {
   final int regId;
   final String type; // wallet | card
-  final VoidCallback onVerified;
-
-  /// Amount is REQUIRED to enforce ₹10,000 biometric limit
+  final VoidCallback? onVerified; // Amount is REQUIRED to enforce ₹10,000 biometric limit
   final double? amount;
 
   const PinVerifyScreen({
     super.key,
     required this.regId,
     required this.type,
-    required this.onVerified,
+    this.onVerified,
     this.amount,
   });
 
@@ -114,7 +112,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
     });
 
     if (res["message"] == "PIN_VERIFIED") {
-      widget.onVerified();
+      widget.onVerified?.call();
       Navigator.pop(context, true);
       return;
     }
@@ -175,7 +173,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
       );
 
       if (success && mounted) {
-        widget.onVerified();
+        widget.onVerified?.call();
         Navigator.pop(context, true);
       }
     } catch (_) {

@@ -7,6 +7,7 @@ import os
 from flask import send_from_directory
 from datetime import datetime
 import math
+import traceback
 def hash_pin(pin: str) -> str:
     return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
 
@@ -188,6 +189,7 @@ def login_verify_otp():
                 s.full_name,
                 s.mobile,
                 s.email,
+                rs.profile_image,
                 rs.upi_id,
                 rs.aadhaar_verified,
                 rs.pan_verified,
@@ -609,14 +611,17 @@ def search_pay_user():
     c = conn.cursor(dictionary=True)
 
     c.execute("""
-        SELECT
-            s.full_name AS name,
-            s.mobile AS identifier
+    SELECT
+        rs.id AS reg_id,
+        s.full_name AS name,
+        s.mobile AS identifier,
+        rs.profile_image
         FROM students s
         JOIN registered_students rs ON s.id = rs.student_id
         WHERE s.mobile LIKE %s
         LIMIT 5
     """, (q + "%",))
+
 
     data = c.fetchall()
     c.close()
@@ -839,7 +844,8 @@ def wallet_to_wallet_transfer():
             amount,
             "failed",
             str(e),
-            "transfer"
+            "transfer",
+            "wallet"
         )
         conn.commit()
 
@@ -1266,6 +1272,7 @@ def get_transactions(reg_id):
         result = []
 
         for t in rows:
+            split_note = None
             txn_type = t["txn_type"]
             sender_id = t["sender_reg_id"]
 
@@ -1284,11 +1291,20 @@ def get_transactions(reg_id):
             # ================= PAID (DEBIT) =================
             elif sender_id == reg_id:
                 direction = "debit"
-                display_name = (
+                raw_name = (
                     t["counterparty_name"]
                     or t["receiver_name"]
                     or "Unknown"
                 )
+
+                split_note = None
+                display_name = raw_name
+
+                if raw_name and " | Split - " in raw_name:
+                    parts = raw_name.split(" | Split - ")
+                    display_name = parts[0]
+                    split_note = parts[1] if len(parts) > 1 else None
+
 
                 title = f"Paid to {display_name}"
                 upi_id = t["receiver_upi_id"] or ""
@@ -1327,7 +1343,7 @@ def get_transactions(reg_id):
                 "direction": direction,
                 "display_name": display_name,
                 "upi_id": upi_id,
-
+                "split_note": split_note,
                 "title": title,
                 "payment_type": payment_type,
                 "status": t["status"],
@@ -1473,6 +1489,70 @@ def unread_notifications_count(reg_id):
     return jsonify({
         "unread": count
     }), 200
+    
+@app.route("/api/notifications/unread/<int:reg_id>", methods=["GET"])
+def get_unread_notifications(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT id, title, message, created_at, is_read
+            FROM notifications
+            WHERE reg_id = %s
+            ORDER BY created_at DESC
+        """, (reg_id,))
+
+        rows = c.fetchall()
+
+        return jsonify(rows), 200
+
+    except Exception as e:
+        print("UNREAD NOTIFICATION ERROR:", e)
+        return jsonify([]), 200
+
+    finally:
+        c.close()
+        conn.close()
+
+@app.route("/api/notifications/mark-read/<int:reg_id>", methods=["POST"])
+def mark_notifications_read(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        UPDATE notifications
+        SET is_read = 1
+        WHERE reg_id = %s
+    """, (reg_id,))
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"message": "MARKED_READ"}, 200
+
+@app.route("/api/notifications/read/<int:notif_id>", methods=["POST"])
+def mark_single_notification_read(notif_id):
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        UPDATE notifications
+        SET is_read = 1
+        WHERE id = %s
+    """, (notif_id,))
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"message": "READ"}, 200
+
+
 # ================= Reset PIN ==================
 @app.route("/api/pin/set", methods=["POST"])
 def set_pin():
@@ -1894,7 +1974,8 @@ def verify_add_money():
             conn,
             c,
             txn["sender_reg_id"],
-            txn["amount"]
+            txn["amount"],
+            is_spend=False
         )
 
         #  Save card ONLY if checkbox selected
@@ -2141,32 +2222,43 @@ def get_scholar_application_status(reg_id):
         "status": row["status"]  
     }, 200
 # ======== Tier =========
-def update_user_points_and_tier(conn, c, reg_id, amount):
-    
+def update_user_points_and_tier(conn, c, reg_id, amount, is_spend=True):
+
     reset_cycle_if_needed(conn, c, reg_id)
 
-    points = max(1, calculate_points(amount))
-    c.execute("""
-        UPDATE registered_students
-        SET reward_points = reward_points + %s
-        WHERE id = %s
-    """, (points, reg_id))
+    if is_spend:
+        # Update total spent
+        c.execute("""
+            UPDATE registered_students
+            SET total_spent = IFNULL(total_spent,0) + %s
+            WHERE id = %s
+        """, (amount, reg_id))
 
-    c.execute("""
-        SELECT reward_points
-        FROM registered_students
-        WHERE id=%s
-    """, (reg_id,))
+        # Calculate points
+        points = max(1, calculate_points(amount))
 
-    total_points = c.fetchone()["reward_points"]
+        c.execute("""
+            UPDATE registered_students
+            SET reward_points = reward_points + %s
+            WHERE id = %s
+        """, (points, reg_id))
 
-    tier = tier_from_points(total_points)
+        # Fetch updated points
+        c.execute("""
+            SELECT reward_points
+            FROM registered_students
+            WHERE id=%s
+        """, (reg_id,))
 
-    c.execute("""
-        UPDATE registered_students
-        SET tier=%s
-        WHERE id=%s
-    """, (tier, reg_id))
+        total_points = c.fetchone()["reward_points"]
+
+        tier = tier_from_points(total_points)
+
+        c.execute("""
+            UPDATE registered_students
+            SET tier=%s
+            WHERE id=%s
+        """, (tier, reg_id))
 
 # ===== Tier Cycle Helper =====
 def get_cycle_start():
@@ -2218,8 +2310,27 @@ def reset_cycle_if_needed(conn, c, reg_id):
 
 # ====== Calculate Points ======
 def calculate_points(amount):
-    points = math.ceil(amount / 25)
-    return min(points, 120)
+    try:
+        amount = float(amount)
+
+        if amount < 200:
+            return 2
+
+        elif amount < 500:
+            return 5
+
+        elif amount < 1000:
+            return 10
+
+        elif amount < 2000:
+            return 15
+
+        else:
+            return 20  
+
+    except:
+        return 0
+
 
 # ===== Points from tier =====
 def tier_from_points(points):
@@ -2230,6 +2341,617 @@ def tier_from_points(points):
     elif points >= 401:
         return "gold"
     return "silver"
+
+
+# ====== Create split Req =========
+@app.route("/api/split/create", methods=["POST"])
+def create_split():
+
+    d = request.json
+
+    required = ["creator_reg_id", "members", "total_amount", "split_type"]
+
+    if not d or not all(k in d for k in required):
+        return {"message": "INVALID_REQUEST"}, 400
+
+    creator = d["creator_reg_id"]
+    members = d["members"]
+    total = float(d["total_amount"])
+    split_type = d["split_type"]
+    note = d.get("note")
+    individual_amounts = d.get("individual_amounts")
+
+    if len(members) < 1:
+        return {"message": "MIN_ONE_MEMBER_REQUIRED"}, 400
+
+    # ================= EVEN SPLIT FALLBACK =================
+    if not individual_amounts or len(individual_amounts) != len(members):
+        per_person = round(total / len(members), 2)
+        individual_amounts = [per_person] * len(members)
+    else:
+        per_person = round(total / len(members), 2)
+
+    # ================= VALIDATE SUM =================
+    if round(sum(individual_amounts), 2) != round(total, 2):
+        return {"message": "AMOUNT_MISMATCH"}, 400
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    try:
+        # ================= CREATE SPLIT GROUP =================
+        c.execute("""
+        INSERT INTO split_groups
+        (creator_reg_id, total_amount, per_person_amount, note, split_type, status, paid_amount)
+        VALUES (%s,%s,%s,%s,%s,'pending',0)
+        """, (creator, total, per_person, note, split_type))
+
+        split_id = c.lastrowid
+
+        # ================= INSERT MEMBERS =================
+        creator_paid_amount = 0  
+
+        for reg_id, amt in zip(members, individual_amounts):
+
+            if reg_id == creator:
+                status = "paid"
+                paid_at = datetime.now()
+                creator_paid_amount += float(amt)   
+            else:
+                status = "pending"
+                paid_at = None
+
+            c.execute("""
+                INSERT INTO split_members
+                (split_group_id, member_reg_id, amount, status, paid_at)
+                VALUES (%s,%s,%s,%s,%s)
+            """, (
+                split_id,
+                reg_id,
+                float(amt),
+                status,
+                paid_at
+            ))
+
+            # ---- Notification Insert (Skip Creator) ----
+            if reg_id != creator:
+                c.execute("""
+                INSERT INTO notifications (
+                    reg_id,
+                    title,
+                    message,
+                    type,
+                    amount,
+                    ref_id,
+                    is_read
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,0)
+                """, (
+                    reg_id,
+                    "Split Request",
+                    f"You have a split request of ₹{float(amt):.2f}",
+                    "system",
+                    float(amt),
+                    split_id
+                ))
+
+        # ================= UPDATE GROUP PAID AMOUNT =================
+        if creator_paid_amount > 0:
+            c.execute("""
+                UPDATE split_groups
+                SET paid_amount = %s,
+                    status = 'partial'
+                WHERE id = %s
+            """, (creator_paid_amount, split_id))
+
+        conn.commit()
+
+        return {
+            "message": "SPLIT_CREATED",
+            "split_id": split_id,
+            "per_person_amount": per_person
+        }, 200
+
+    except Exception as e:
+        conn.rollback()
+        print("Split Create FULL ERROR:")
+        traceback.print_exc()
+
+        return {"message": "SPLIT_CREATE_FAILED"}, 500
+
+    finally:
+        c.close()
+        conn.close()
+
+
+# ========= Get My splits ===========
+@app.route("/api/split/my/<int:reg_id>", methods=["GET"])
+def get_my_splits(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT
+            sm.id,
+            sm.split_group_id,
+            sm.amount,
+            sm.status,
+            sg.creator_reg_id,
+            sg.created_at
+        FROM split_members sm
+        JOIN split_groups sg
+          ON sg.id = sm.split_group_id
+        WHERE sm.member_reg_id = %s
+        ORDER BY sg.created_at DESC
+    """, (reg_id,))
+
+    rows = c.fetchall()
+
+    c.close()
+    conn.close()
+
+    return rows, 200
+
+# ============ splt requests =============
+@app.route("/api/split/requests/<int:reg_id>", methods=["GET"])
+def get_split_requests(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+
+        c.execute("""
+        SELECT
+            sm.id AS split_member_id,
+            sm.amount,
+            sm.status,
+            sg.id AS split_id,
+            sg.total_amount,
+            sg.note,
+            sg.split_type,
+            sg.status AS group_status,
+            sg.closed,
+            sg.creator_reg_id,
+            sg.created_at,
+
+            s.full_name AS creator_name,
+            s.mobile AS creator_mobile,
+            rs.upi_id AS creator_upi,
+            rs.profile_image AS creator_image
+
+        FROM split_groups sg
+
+        LEFT JOIN split_members sm
+        ON sm.split_group_id = sg.id
+        AND sm.member_reg_id = %s
+
+        JOIN registered_students rs ON rs.id = sg.creator_reg_id
+        JOIN students s ON s.id = rs.student_id
+
+        WHERE sg.creator_reg_id = %s
+        OR sm.member_reg_id = %s
+
+        ORDER BY sg.created_at DESC
+        """, (reg_id, reg_id, reg_id))
+
+
+        splits = c.fetchall()
+
+        for split in splits:
+
+            c.execute("""
+            SELECT
+                sm.id,
+                sm.member_reg_id AS reg_id,
+                sm.amount,
+                sm.status,
+                s.full_name AS name,
+                rs.profile_image
+            FROM split_members sm
+            JOIN registered_students rs ON rs.id = sm.member_reg_id
+            JOIN students s ON s.id = rs.student_id
+            WHERE sm.split_group_id = %s
+            """, (split["split_id"],))
+
+            members = c.fetchall()
+
+            for m in members:
+                m["paid"] = m["status"] == "paid"
+
+            split["members"] = members
+
+        return jsonify(splits), 200
+
+    except Exception as e:
+        print("GET SPLIT REQUEST ERROR:", e)
+        return jsonify([]), 200
+
+    finally:
+        c.close()
+        conn.close()
+        
+        
+# ===== Split Member Eligibility =====
+@app.route("/api/split/member-status/<int:reg_id>", methods=["GET"])
+def get_split_member_status(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT
+                rs.aadhaar_verified,
+                rs.pan_verified,
+                w.status AS wallet_status,
+                w.balance
+            FROM registered_students rs
+            JOIN wallets w ON rs.id = w.registered_student_id
+            WHERE rs.id=%s
+        """, (reg_id,))
+
+        user = c.fetchone()
+
+        if not user:
+            return {"message": "USER_NOT_FOUND"}, 404
+
+        return {
+            "aadhaar_verified": user["aadhaar_verified"] == 1,
+            "wallet_active": user["wallet_status"] == "active",
+            "balance": float(user["balance"]),
+            "can_pay": (
+                user["aadhaar_verified"] == 1
+                and user["wallet_status"] == "active"
+            )
+        }, 200
+
+    finally:
+        c.close()
+        conn.close()
+
+# ======== Pay Split ========
+@app.route("/api/split/pay", methods=["POST"])
+def pay_split():
+
+    d = request.json
+
+    if not d or "split_member_id" not in d or "payer_reg_id" not in d:
+        return {"message": "INVALID_REQUEST"}, 400
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+    amount = 0
+
+    try:
+        # ===== LOCK SPLIT MEMBER =====
+        c.execute("""
+        SELECT 
+            sm.*,
+            sg.creator_reg_id,
+            sg.id AS split_group_id,
+            sg.note,
+            s.full_name AS creator_name
+        FROM split_members sm
+        JOIN split_groups sg ON sg.id = sm.split_group_id
+        JOIN registered_students rs ON rs.id = sg.creator_reg_id
+        JOIN students s ON s.id = rs.student_id
+        WHERE sm.id=%s
+        FOR UPDATE
+        """, (d["split_member_id"],))
+
+        sm = c.fetchone()
+        # ===== BLOCK IF SPLIT CLOSED =====
+        c.execute("""
+        SELECT IFNULL(closed,0) as closed
+        FROM split_groups
+        WHERE id=%s
+        """, (sm["split_group_id"],))
+
+        closed_row = c.fetchone()
+
+        if closed_row and closed_row["closed"] == 1:
+            return {"message": "SPLIT_ALREADY_CLOSED"}, 400
+
+
+        if not sm:
+            return {"message": "SPLIT_NOT_FOUND"}, 404
+
+        note = sm.get("note")
+        creator_name = sm.get("creator_name")
+
+        amount = float(sm["amount"])
+        creator = sm["creator_reg_id"]
+
+        # ===== FETCH CREATOR IDENTIFIER =====
+        c.execute("""
+        SELECT s.mobile, rs.upi_id
+        FROM registered_students rs
+        JOIN students s ON s.id = rs.student_id
+        WHERE rs.id=%s
+        """, (creator,))
+
+        creator_row = c.fetchone()
+
+        creator_identifier = (
+            creator_row["upi_id"]
+            if creator_row and creator_row.get("upi_id")
+            else creator_row.get("mobile") if creator_row else None
+        )
+
+        # ===== KYC CHECK =====
+        c.execute("""
+        SELECT aadhaar_verified, pan_verified
+        FROM registered_students
+        WHERE id=%s
+        """, (d["payer_reg_id"],))
+
+        kyc = c.fetchone()
+
+        if not kyc or kyc["aadhaar_verified"] != 1:
+            return {"message": "AADHAAR_REQUIRED"}, 403
+
+        # ===== LOCK WALLET =====
+        c.execute("""
+            SELECT balance, status
+            FROM wallets
+            WHERE registered_student_id=%s
+            FOR UPDATE
+        """, (d["payer_reg_id"],))
+
+        wallet = c.fetchone()
+
+        split_display_name = (
+            f"{creator_name} | Split - {note}"
+            if note else creator_name
+        )
+
+        # ===== WALLET INACTIVE =====
+        if not wallet or wallet["status"] != "active":
+
+            _log_txn(
+                c,
+                d["payer_reg_id"],
+                creator,
+                creator_identifier,
+                amount,
+                "failed",
+                "WALLET_INACTIVE",
+                "transfer",
+                "wallet",
+                split_display_name
+            )
+
+            conn.commit()
+            return {"message": "WALLET_INACTIVE"}, 403
+
+        # ===== DEBIT PAYER =====
+        c.execute("""
+            UPDATE wallets
+            SET balance = balance - %s
+            WHERE registered_student_id=%s
+        """, (amount, d["payer_reg_id"]))
+
+        # ===== CREDIT CREATOR =====
+        c.execute("""
+            UPDATE wallets
+            SET balance = balance + %s
+            WHERE registered_student_id=%s
+        """, (amount, creator))
+
+        # ===== MARK MEMBER PAID =====
+        c.execute("""
+            UPDATE split_members
+            SET status='paid', paid_at=NOW()
+            WHERE id=%s
+        """, (d["split_member_id"],))
+
+        # ===== UPDATE GROUP PAID AMOUNT =====
+        c.execute("""
+            UPDATE split_groups
+            SET paid_amount = paid_amount + %s
+            WHERE id=%s
+        """, (amount, sm["split_group_id"]))
+
+        # ===== CHECK GROUP STATUS =====
+        c.execute("""
+            SELECT COUNT(*) AS pending_count
+            FROM split_members
+            WHERE split_group_id=%s AND status='pending'
+        """, (sm["split_group_id"],))
+
+        pending = c.fetchone()["pending_count"]
+
+        if pending == 0:
+            c.execute("""
+                UPDATE split_groups
+                SET status='completed'
+                WHERE id=%s
+            """, (sm["split_group_id"],))
+        else:
+            c.execute("""
+                UPDATE split_groups
+                SET status='partial'
+                WHERE id=%s
+            """, (sm["split_group_id"],))
+
+        # ===== TRANSACTION HISTORY SUCCESS =====
+        _log_txn(
+            c,
+            d["payer_reg_id"],
+            creator,
+            creator_identifier,
+            amount,
+            "success",
+            None,
+            "transfer",
+            "wallet",
+            split_display_name
+        )
+
+        # ===== REWARDS UPDATE =====
+        update_user_points_and_tier(
+            conn,
+            c,
+            d["payer_reg_id"],
+            amount
+        )
+
+        conn.commit()
+
+        return {
+            "message": "SPLIT_PAID",
+            "creator_name": creator_name,
+            "note": note,
+            "payment_method": "wallet",
+            "paid_at": datetime.now().isoformat()
+        }, 200
+
+    # ===== EXCEPTION =====
+    except Exception as e:
+        conn.rollback()
+
+        safe_creator_name = locals().get("creator_name")
+        safe_note = locals().get("note")
+        safe_creator_identifier = locals().get("creator_identifier")
+
+        split_display_name = (
+            f"{safe_creator_name} | Split - {safe_note}"
+            if safe_creator_name and safe_note
+            else safe_creator_name
+        )
+
+        _log_txn(
+            c,
+            d.get("payer_reg_id"),
+            None,
+            safe_creator_identifier,
+            amount,
+            "failed",
+            str(e),
+            "transfer",
+            "wallet",
+            split_display_name
+        )
+
+        conn.commit()
+
+        return {"message": "SPLIT_PAYMENT_FAILED"}, 500
+
+
+    # ===== FINALLY =====
+    finally:
+        c.close()
+        conn.close()
+        
+
+# ======== Close Split ===========
+@app.route("/api/split/close", methods=["POST"])
+def close_split():
+
+    data = request.json
+    split_id = data.get("split_id")
+    creator_reg_id = data.get("creator_reg_id")
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+
+        # ===== VERIFY CREATOR =====
+        c.execute("""
+            SELECT creator_reg_id
+            FROM split_groups
+            WHERE id=%s
+        """, (split_id,))
+        group = c.fetchone()
+
+        if not group:
+            return {"message": "SPLIT_NOT_FOUND"}, 404
+
+        if group["creator_reg_id"] != creator_reg_id:
+            return {"message": "NOT_ALLOWED"}, 403
+
+        # ===== CHECK ALL PAID =====
+        c.execute("""
+            SELECT COUNT(*) as unpaid
+            FROM split_members
+            WHERE split_group_id=%s
+            AND status!='paid'
+        """, (split_id,))
+        unpaid = c.fetchone()["unpaid"]
+
+        if unpaid > 0:
+            return {"message": "ALL_NOT_PAID"}, 400
+
+        # ===== CLOSE SPLIT =====
+        c.execute("""
+            UPDATE split_groups
+            SET closed=1
+            WHERE id=%s
+        """, (split_id,))
+
+        conn.commit()
+
+        return {"message": "SPLIT_CLOSED"}, 200
+
+    except Exception as e:
+        conn.rollback()
+        return {"message": str(e)}, 500
+
+    finally:
+        conn.close()
+
+ # Create splits       
+@app.route("/api/split/created/<int:reg_id>", methods=["GET"])
+def get_created_splits(reg_id):
+
+    split_type = request.args.get("type")
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+    SELECT *
+    FROM split_groups
+    WHERE creator_reg_id=%s
+    AND (%s IS NULL OR split_type=%s)
+    ORDER BY created_at DESC
+    """, (reg_id, split_type, split_type))
+
+    rows = c.fetchall()
+
+    c.close()
+    conn.close()
+
+    return rows, 200
+
+# Split members
+@app.route("/api/split/members/<int:split_id>", methods=["GET"])
+def get_split_members(split_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+    SELECT
+    sm.*,
+    s.full_name,
+    rs.profile_image
+    FROM split_members sm
+    JOIN registered_students rs ON rs.id = sm.member_reg_id
+    JOIN students s ON s.id = rs.student_id
+    WHERE sm.split_group_id=%s
+    """, (split_id,))
+
+    rows = c.fetchall()
+
+    c.close()
+    conn.close()
+
+    return rows, 200
+
 
 #========================= RUN=========================
 """if __name__ == "__main__":
