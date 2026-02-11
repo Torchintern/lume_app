@@ -62,50 +62,88 @@ class _TierPointsSwapWidgetState
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6),
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
         ],
       ),
+
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 350),
 
         child: showRemaining && remainingToNextTier > 0
+
+            // ================= SWAP VIEW =================
             ? Row(
                 key: const ValueKey("remaining"),
                 mainAxisSize: MainAxisSize.min,
                 children: [
+
+                  /// NEXT TIER BADGE (BIGGER)
                   Image.asset(
                     getTierAsset(nextTier),
+                    height: 28,
+                  ),
+
+                  const SizedBox(width: 8),
+
+                  /// REMAINING NUMBER
+                  Text(
+                    remainingToNextTier.toString(),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+
+                  const SizedBox(width: 5),
+
+                  /// POINTS ICON
+                  Image.asset(
+                    "assets/tier/points.png",
                     height: 20,
                   ),
+
                   const SizedBox(width: 6),
-                  Text(
-                    "$remainingToNextTier pts left",
-                    style: const TextStyle(
+
+                  const Text(
+                    "left",
+                    style: TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               )
+
+            // ================= NORMAL VIEW =================
             : Row(
                 key: const ValueKey("current"),
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Image.asset(
-                    getTierAsset(widget.tier),
-                    height: 20,
-                  ),
-                  const SizedBox(width: 6),
+
+                  /// CURRENT POINTS NUMBER
                   Text(
-                    "${widget.rewardPoints} pts",
+                    widget.rewardPoints.toString(),
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
+                  ),
+
+                  const SizedBox(width: 6),
+
+                  /// POINTS ICON
+                  Image.asset(
+                    "assets/tier/points.png",
+                    height: 22,
                   ),
                 ],
               ),

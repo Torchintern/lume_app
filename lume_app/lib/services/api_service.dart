@@ -375,14 +375,15 @@ static Future<List<dynamic>> getRecentPayees(int regId) async {
 
 
 // ========================= Wallet - wallet transfer ============================
-static Future<bool> walletToWalletTransfer({
+static Future<Map<String, dynamic>?> walletToWalletTransfer({
   required int senderRegId,
   required String receiverMobile,
   required double amount,
 }) async {
+
   final res = await http.post(
     Uri.parse("$baseUrl/wallet/transfer"),
-    headers: {"Content-Type": "application/json"},
+    headers: headers,
     body: jsonEncode({
       "sender_reg_id": senderRegId,
       "receiver_mobile": receiverMobile,
@@ -390,15 +391,21 @@ static Future<bool> walletToWalletTransfer({
     }),
   );
 
-  return res.statusCode == 200;
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return null;
 }
+
 // ===================== wallet to UPI ================
-static Future<bool> payViaUpi(
+static Future<Map<String, dynamic>?> payViaUpi(
   int senderRegId,
   String upiId,
   double amount,
-  String name, 
+  String name,
 ) async {
+
   final res = await http.post(
     Uri.parse("$baseUrl/pay/upi"),
     headers: headers,
@@ -410,8 +417,13 @@ static Future<bool> payViaUpi(
     }),
   );
 
-  return res.statusCode == 200;
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return null;
 }
+
 
 // ================= SEARCH LUME USER BY INTERNAL UPI =================
 static Future<List<dynamic>> searchLumeUserByUpi(String query) async {
@@ -888,7 +900,7 @@ static Future<List<dynamic>> getMySplits(int regId) async {
   return [];
 }
 // ================= PAY SPLIT =================
-static Future<String> paySplit({
+static Future<Map<String, dynamic>?> paySplit({
   required int splitMemberId,
   required int payerRegId,
 }) async {
@@ -902,13 +914,11 @@ static Future<String> paySplit({
     }),
   );
 
-  final data = jsonDecode(res.body);
-
   if (res.statusCode == 200) {
-    return data["message"] ?? "SUCCESS";
-  } else {
-    throw Exception(data["message"] ?? "PAYMENT_FAILED");
+    return jsonDecode(res.body);
   }
+
+  return null;
 }
 
 

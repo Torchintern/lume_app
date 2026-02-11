@@ -178,8 +178,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     for (var n in filtered) {
 
-      final dt = DateTime.tryParse(n["created_at"] ?? "") ??
-          DateTime.now();
+      final dt = (DateTime.tryParse(n["created_at"] ?? "") ??
+            DateTime.now())
+        .toLocal();
 
       final key = _dateLabel(dt);
 

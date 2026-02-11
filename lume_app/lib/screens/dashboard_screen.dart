@@ -912,7 +912,7 @@ Widget build(BuildContext context) {
             children: [
               // ================= TOP ROW =================
               SizedBox(
-              height: 40,
+              height: 50,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -1172,6 +1172,43 @@ class _PayViewState extends State<_PayView>
   List<dynamic> splitRequests = [];
   bool loadingSplitRequests = true;
   bool showSplitSection = false;
+  int getUnpaidSplitCount() {
+  int count = 0;
+
+  for (final split in splitRequests) {
+    final members = split["members"] ?? [];
+
+    Map<String, dynamic>? myMember;
+
+    try {
+      myMember = members.firstWhere(
+        (m) => m["reg_id"] == widget.regId,
+      );
+    } catch (_) {
+      myMember = null;
+    }
+
+    bool isPaidStatus(dynamic status) {
+      if (status == null) return false;
+      return status.toString().toLowerCase() == "paid";
+    }
+
+    final myPaid =
+        myMember?["paid"] == true ||
+        isPaidStatus(myMember?["status"]);
+
+    final isClosed =
+        split["closed"] == 1 ||
+        split["closed"] == true;
+
+    if (!myPaid && !isClosed && myMember != null) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
 
 
   List<Map<String, dynamic>> dedupeRecentPayees(List<dynamic> list) {
@@ -1887,6 +1924,7 @@ GestureDetector(
       children: [
         const Icon(Icons.call_split, color: Color(0xFF4C6EF5)),
         const SizedBox(width: 12),
+
         const Expanded(
           child: Text(
             "Split Payments",
@@ -1896,6 +1934,29 @@ GestureDetector(
             ),
           ),
         ),
+
+        // ===== UNPAID COUNT BADGE =====
+        if (getUnpaidSplitCount() > 0)
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              getUnpaidSplitCount().toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
         Icon(
           showSplitSection
               ? Icons.keyboard_arrow_up
@@ -1912,8 +1973,22 @@ AnimatedSize(
   duration: const Duration(milliseconds: 350),
   curve: Curves.easeInOut,
   child: showSplitSection
-      ? Column(
-          children: splitRequests.map((split) {
+      ? Container(
+    height: 340,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: const [
+        BoxShadow(color: Colors.black12, blurRadius: 10),
+      ],
+    ),
+
+    child: SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        children: splitRequests.map((split) {
+
 
 final members = split["members"] ?? [];
 
@@ -2173,22 +2248,113 @@ final bool isClosed =
                     onPressed: () async {
                       final confirm = await showDialog(
                         context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text("Close Split?"),
-                          content: const Text(
-                            "This split will be marked as closed.\n\n"
-                            "No further payments will be allowed.",
+                        barrierColor: Colors.black54,
+                        builder: (_) => Dialog(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text("Cancel"),
+                          child: Container(
+                            padding: const EdgeInsets.all(22),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
                             ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text("Close Split"),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+
+                                // ===== ICON =====
+                                Container(
+                                  height: 60,
+                                  width: 60,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE8ECFF),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: const Icon(
+                                    Icons.lock_outline,
+                                    color: Color(0xFF4C6EF5),
+                                    size: 30,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 18),
+
+                                // ===== TITLE =====
+                                const Text(
+                                  "Close Split",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 10),
+
+                                // ===== MESSAGE =====
+                                const Text(
+                                  "This split will be marked as closed.\nNo further payments will be allowed.",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 22),
+
+                                // ===== BUTTON ROW =====
+                                Row(
+                                  children: [
+
+                                    // CANCEL BUTTON
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.grey.shade700,
+                                          side: BorderSide(color: Colors.grey.shade300),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(14),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                        ),
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: const Text(
+                                          "Cancel",
+                                          style: TextStyle(fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                    ),
+
+                                    const SizedBox(width: 12),
+
+                                    // CLOSE BUTTON
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF4C6EF5),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(14),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                          elevation: 0,
+                                        ),
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: const Text(
+                                          "Close Split",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       );
 
@@ -2202,13 +2368,94 @@ final bool isClosed =
                       if (ok) {
                         await _loadSplitRequests();
 
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Split closed successfully"),
+                        if (!mounted) return;
+
+                        await showDialog(
+                          context: context,
+                          barrierDismissible: true,
+                          barrierColor: Colors.black54,
+                          builder: (_) => Dialog(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
                             ),
-                          );
-                        }
+                            child: Container(
+                              padding: const EdgeInsets.all(22),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+
+                                  // ===== GREEN SUCCESS ICON =====
+                                  Container(
+                                    height: 64,
+                                    width: 64,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade50,
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: const Icon(
+                                      Icons.check_circle,
+                                      color: Colors.green,
+                                      size: 36,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 18),
+
+                                  // ===== TITLE =====
+                                  const Text(
+                                    "Split Closed",
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 10),
+
+                                  // ===== MESSAGE =====
+                                  const Text(
+                                    "This split has been successfully closed.",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.black54,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 22),
+
+                                  // ===== OK BUTTON =====
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF4C6EF5),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        elevation: 0,
+                                      ),
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text(
+                                        "Done",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
                       }
                     },
                     child: const Text("Close Split"),
@@ -2245,8 +2492,8 @@ final bool isClosed =
 
                           try {
 
-                            await ApiService.paySplit(
-                              splitMemberId: myMember?["id"],  
+                            final res = await ApiService.paySplit(
+                              splitMemberId: myMember?["id"],
                               payerRegId: widget.regId,
                             );
 
@@ -2277,6 +2524,7 @@ final bool isClosed =
                                 aadhaarVerified: dashboardState?.widget.aadhaarVerified ?? 0,
                                 panVerified: dashboardState?.widget.panVerified ?? 0,
                                 direction: "debit",
+                                earnedPoints: res?["earned_points"],
                               ),
                               ),
                             );
@@ -2310,6 +2558,7 @@ final bool isClosed =
                                   aadhaarVerified: dashboardState?.widget.aadhaarVerified ?? 0,
                                   panVerified: dashboardState?.widget.panVerified ?? 0,
                                   direction: "debit",
+                                  
                                 ),
                               ),
                             );
@@ -2351,7 +2600,10 @@ final bool isClosed =
         ),
       );
     }).toList(),
-         )
+      ),
+    ),
+)
+
       : const SizedBox(),
 ),
 

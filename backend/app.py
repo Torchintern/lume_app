@@ -828,10 +828,17 @@ def wallet_to_wallet_transfer():
             "wallet",
             receiver["full_name"]
         )
-        update_user_points_and_tier(conn, c, sender_reg_id, amount)
+        reward = update_user_points_and_tier(
+                conn, c, sender_reg_id, amount
+            )
 
         conn.commit()
-        return {"message": "TRANSFER_SUCCESS"}, 200
+        return {
+            "message": "TRANSFER_SUCCESS",
+            "earned_points": reward.get("earned_points", 0),
+            "total_points": reward["total_points"],
+            "tier": reward["tier"]
+        }, 200
 
     except Exception as e:
         conn.rollback()
@@ -984,10 +991,18 @@ def wallet_to_upi_payment():
                 "upi",
                 upi_name
             )
-        update_user_points_and_tier(conn, c, sender_id, amount)
+        reward = update_user_points_and_tier(
+            conn, c, sender_id, amount
+        )
 
         conn.commit()
-        return {"message": "UPI_PAYMENT_SUCCESS"}, 200
+        return {
+            "message": "UPI_PAYMENT_SUCCESS",
+            "earned_points": reward.get("earned_points", 0),
+            "total_points": reward["total_points"],
+            "tier": reward["tier"]
+        }, 200
+
 
     except Exception as e:
         conn.rollback()
@@ -1105,9 +1120,14 @@ def wallet_to_wallet_transfer_internal(sender_id, receiver_id, receiver_upi, amo
             "transfer",
             "wallet"
         )
-        update_user_points_and_tier(conn, c, sender_id, amount)
+        reward = update_user_points_and_tier(conn, c, sender_id, amount)
         conn.commit()
-        return {"message": "TRANSFER_SUCCESS"}, 200
+        return {
+            "message": "TRANSFER_SUCCESS",
+            "earned_points": reward.get("earned_points", 0),
+            "total_points": reward["total_points"],
+            "tier": reward["tier"]
+        }, 200
 
     except Exception as e:
         conn.rollback()
@@ -1350,7 +1370,7 @@ def get_transactions(reg_id):
                 "status_text": status_text,
                 "failure_reason": t["failure_reason"],
                 "created_at": (
-                    t["created_at"].isoformat()
+                    t["created_at"].isoformat() + "Z"
                     if t["created_at"]
                     else None
                 ),
@@ -1505,6 +1525,10 @@ def get_unread_notifications(reg_id):
         """, (reg_id,))
 
         rows = c.fetchall()
+
+        for r in rows:
+            if r["created_at"]:
+                r["created_at"] = r["created_at"].isoformat()
 
         return jsonify(rows), 200
 
@@ -2226,6 +2250,8 @@ def update_user_points_and_tier(conn, c, reg_id, amount, is_spend=True):
 
     reset_cycle_if_needed(conn, c, reg_id)
 
+    earned_points = 0
+
     if is_spend:
         # Update total spent
         c.execute("""
@@ -2234,16 +2260,17 @@ def update_user_points_and_tier(conn, c, reg_id, amount, is_spend=True):
             WHERE id = %s
         """, (amount, reg_id))
 
-        # Calculate points
-        points = max(1, calculate_points(amount))
+        # Calculate earned points
+        earned_points = max(1, calculate_points(amount))
 
+        # Add points
         c.execute("""
             UPDATE registered_students
             SET reward_points = reward_points + %s
             WHERE id = %s
-        """, (points, reg_id))
+        """, (earned_points, reg_id))
 
-        # Fetch updated points
+        # Fetch updated total
         c.execute("""
             SELECT reward_points
             FROM registered_students
@@ -2259,6 +2286,17 @@ def update_user_points_and_tier(conn, c, reg_id, amount, is_spend=True):
             SET tier=%s
             WHERE id=%s
         """, (tier, reg_id))
+
+        return {
+            "earned_points": earned_points,
+            "total_points": total_points,
+            "tier": tier
+        }
+
+    return {
+        "earned_points": 0
+    }
+
 
 # ===== Tier Cycle Helper =====
 def get_cycle_start():
@@ -2791,22 +2829,27 @@ def pay_split():
         )
 
         # ===== REWARDS UPDATE =====
-        update_user_points_and_tier(
-            conn,
-            c,
-            d["payer_reg_id"],
-            amount
-        )
+        reward = update_user_points_and_tier(
+                conn,
+                c,
+                d["payer_reg_id"],
+                amount
+            )
+
 
         conn.commit()
 
         return {
             "message": "SPLIT_PAID",
+            "earned_points": reward.get("earned_points", 0),
+            "total_points": reward["total_points"],
+            "tier": reward["tier"],
             "creator_name": creator_name,
             "note": note,
             "payment_method": "wallet",
             "paid_at": datetime.now().isoformat()
         }, 200
+
 
     # ===== EXCEPTION =====
     except Exception as e:

@@ -23,6 +23,7 @@ class PaymentResultScreen extends StatelessWidget {
   final String? note;
   final String? paymentMethod;
   final DateTime? txnTime;
+  final int? earnedPoints;
 
   const PaymentResultScreen({
   super.key,
@@ -44,6 +45,8 @@ class PaymentResultScreen extends StatelessWidget {
   this.note,
   this.paymentMethod,
   this.txnTime,
+  this.earnedPoints,
+
 
 
 });
@@ -214,6 +217,42 @@ Date: $formattedTime
                 color: statusColor,
               ),
             ),
+
+            if (status == "success" &&
+            earnedPoints != null &&
+            earnedPoints! > 0) ...[
+          const SizedBox(height: 14),
+
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 10,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  "assets/tier/points.png",
+                  height: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  "+$earnedPoints Tier Points Earned",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
 
             const SizedBox(height: 30),
 

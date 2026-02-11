@@ -128,68 +128,74 @@ class _PaymentAmountScreenState
     );
   }
 
-  Future<void> _executePayment() async {
-    if (!canPay) return;
+ Future<void> _executePayment() async {
+  if (!canPay) return;
 
-    setState(() => paying = true);
-    String status = "failed";
+  setState(() => paying = true);
+  String status = "failed";
 
-    try {
-      bool ok = false;
+  Map<String, dynamic>? res;   // ⭐ MOVE HERE (OUTSIDE TRY)
 
-      if (!widget.payee.contains("@")) {
-        ok = await ApiService.walletToWalletTransfer(
-          senderRegId: widget.regId,
-          receiverMobile: widget.payee,
-          amount: amount,
-        );
-      } else {
-        ok = await ApiService.payViaUpi(
-          widget.regId,
-          widget.payee,
-          amount,
-          widget.payeeName,
-        );
-      }
+  try {
 
-      status = ok ? "success" : "failed";
-    } catch (_) {
-      status = "failed";
+    if (!widget.payee.contains("@")) {
+
+      res = await ApiService.walletToWalletTransfer(
+        senderRegId: widget.regId,
+        receiverMobile: widget.payee,
+        amount: amount,
+      );
+
+    } else {
+
+      res = await ApiService.payViaUpi(
+        widget.regId,
+        widget.payee,
+        amount,
+        widget.payeeName,
+      );
+
     }
 
-    if (!mounted) return;
-    setState(() => paying = false);
+    status = res != null ? "success" : "failed";
 
-final details = await ApiService.getStudentDetails(widget.regId);
-
-Navigator.pushReplacement(
-  context,
-  MaterialPageRoute(
-    builder: (_) => PaymentResultScreen(
-      amount: amount,
-      status: status,
-      direction: "debit",
-
-      payeeName: widget.payeeName.isNotEmpty
-          ? widget.payeeName
-          : widget.payee,
-
-      payee: widget.payee,
-      isWallet: !widget.payee.contains("@"),
-      regId: widget.regId,
-      fullName: details["full_name"] ?? "",
-      mobile: details["mobile"] ?? "",
-      upiId: details["upi_id"],
-      walletStatus: details["wallet_status"] ?? "inactive",
-      aadhaarVerified: details["aadhaar_verified"] ?? 0,
-      panVerified: details["pan_verified"] ?? 0,
-    ),
-  ),
-);
-
-
-
+  } catch (_) {
+    status = "failed";
   }
+
+  if (!mounted) return;
+  setState(() => paying = false);
+
+  final details = await ApiService.getStudentDetails(widget.regId);
+
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PaymentResultScreen(
+        amount: amount,
+        status: status,
+        direction: "debit",
+
+        payeeName: widget.payeeName.isNotEmpty
+            ? widget.payeeName
+            : widget.payee,
+
+        payee: widget.payee,
+        isWallet: !widget.payee.contains("@"),
+        regId: widget.regId,
+        fullName: details["full_name"] ?? "",
+        mobile: details["mobile"] ?? "",
+        upiId: details["upi_id"],
+        walletStatus: details["wallet_status"] ?? "inactive",
+        aadhaarVerified: details["aadhaar_verified"] ?? 0,
+        panVerified: details["pan_verified"] ?? 0,
+
+        earnedPoints: res?["earned_points"], 
+      ),
+    ),
+  );
+}
+
 
   void _showWalletPinRequiredDialog() {
     showDialog(

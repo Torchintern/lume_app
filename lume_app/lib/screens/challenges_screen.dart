@@ -221,14 +221,34 @@ int get maxPoints {
           /// POINTS
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              "$rewardPoints points",
-              style: const TextStyle(
-                fontSize: 40,
-                fontWeight: FontWeight.bold,
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: rewardPoints.toString(),
+                    style: const TextStyle(
+                      fontSize: 40,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.baseline,
+                    baseline: TextBaseline.alphabetic,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: Image.asset(
+                        "assets/tier/points.png",
+                        height: 26, 
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+
 
           const SizedBox(height: 20),
 

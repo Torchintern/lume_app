@@ -47,12 +47,12 @@ class LiquidKycProgressBar extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(40),
 
-                  // ===== ORANGE LIQUID GRADIENT =====
+                  // ===== BLUE LIQUID GRADIENT =====
                   gradient: const LinearGradient(
                     colors: [
-                      Color(0xFFFFD54F),
-                      Color(0xFFFF9800),
-                      Color(0xFFFF6F00),
+                      Color(0xFF90CAF9),   
+                      Color(0xFF4C6EF5),   
+                      Color(0xFF1A3ED8),  
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
