@@ -1,11 +1,47 @@
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
 import 'package:lume_app/screens/cashback_store_screen.dart';
 
-class MyVouchersScreen extends StatelessWidget {
+class MyVouchersScreen extends StatefulWidget {
   const MyVouchersScreen({super.key});
 
-  // For now empty list
-  final List<dynamic> vouchers = const [];
+  @override
+  State<MyVouchersScreen> createState() => _MyVouchersScreenState();
+}
+
+class _MyVouchersScreenState extends State<MyVouchersScreen> {
+
+  bool loading = true;
+  List<dynamic> vouchers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVouchers();
+  }
+
+  Future<void> _loadVouchers() async {
+    try {
+      final regId = ApiService.currentUserRegId;
+
+      if (regId == null) {
+        setState(() => loading = false);
+        return;
+      }
+
+      final data = await ApiService.getVouchers(regId);
+
+      if (!mounted) return;
+
+      setState(() {
+        vouchers = data;
+        loading = false;
+      });
+
+    } catch (e) {
+      setState(() => loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,16 +64,85 @@ class MyVouchersScreen extends StatelessWidget {
         ),
       ),
 
-      body: vouchers.isEmpty
-          ? _EmptyState()
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: vouchers.length,
-              itemBuilder: (_, i) {
-                return Container(); 
-              },
-            ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : vouchers.isEmpty
+              ? _EmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: vouchers.length,
+                  itemBuilder: (_, i) {
+
+                    final v = vouchers[i];
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(.05),
+                            blurRadius: 10,
+                          )
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+
+                          const CircleAvatar(
+                            backgroundColor: Color(0xFFE8ECFF),
+                            child: Icon(
+                              Icons.card_giftcard,
+                              color: Color(0xFF4C6EF5),
+                            ),
+                          ),
+
+                          const SizedBox(width: 14),
+
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  v["voucher_code"] ?? "",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  v["status"] ?? "",
+                                  style: const TextStyle(
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          Text(
+                            _formatDate(v["created_at"]),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
     );
+  }
+
+  String _formatDate(String? iso) {
+    if (iso == null) return "";
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return "";
+    return "${dt.day}/${dt.month}/${dt.year}";
   }
 }
 
@@ -51,12 +156,15 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+
             const Icon(
               Icons.confirmation_number_outlined,
               size: 64,
               color: Color(0xFF4C6EF5),
             ),
+
             const SizedBox(height: 16),
+
             const Text(
               "No vouchers available",
               style: TextStyle(
@@ -64,12 +172,15 @@ class _EmptyState extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
+
             const SizedBox(height: 8),
+
             const Text(
-              "Start earning cashback by purchasing vouchers",
+              "Start earning vouchers by making payments",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey),
             ),
+
             const SizedBox(height: 28),
 
             GestureDetector(

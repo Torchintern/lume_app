@@ -34,6 +34,8 @@ import '../utils/tier_assets.dart';
 import '/widgets/tier_points_swap_widget.dart';
 import '../widgets/liquid_progress_bar.dart';
 import 'payment_result_screen.dart';
+import 'package:lume_app/screens/rewards/cash_won_screen.dart';
+import 'package:lume_app/screens/rewards/coupons_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -60,9 +62,9 @@ class DashboardScreen extends StatefulWidget {
   });
 
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+State<DashboardScreen> createState() => DashboardScreenState();
 }
-class _DashboardScreenState extends State<DashboardScreen>
+class DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
 
   final LocalAuthentication _auth = LocalAuthentication();
@@ -200,11 +202,14 @@ Widget buildKycStatusBadge() {
 
 // Refresh wallet balance
 Future<void> refreshWalletNow() async {
-  final walletState =
-      context.findAncestorStateOfType<_WalletViewState>();
-  walletState?.refreshAll();
-  await _refreshStudentState();
+
+  // Trigger wallet reload via global refresh instead
+  await refreshStudentState();
+  await loadUnreadCount();
+
 }
+
+
 
 
 Future<void> _pickImage(ImageSource source) async {
@@ -220,7 +225,7 @@ Future<void> _pickImage(ImageSource source) async {
     regId: widget.regId,
     imageFile: File(picked.path),
   );
-  await _refreshStudentState();
+  await refreshStudentState();
   setState(() {});
 }
 
@@ -300,7 +305,8 @@ void _copyUpiId(String upi) async {
   });
 }
 
-Future<void> _loadUnreadCount() async {
+Future<void> loadUnreadCount()
+ async {
   try {
     unreadCount =
         await ApiService.getUnreadNotificationCount(widget.regId);
@@ -333,8 +339,8 @@ void initState() {
   }
 
   _pageController = PageController(initialPage: currentIndex);
-  _loadUnreadCount();
-  _refreshStudentState();
+  loadUnreadCount();
+  refreshStudentState();
 }
 
 
@@ -444,7 +450,8 @@ Future<void> openWalletPinFlow() async {
 
 
 // Refresh student state
-Future<void> _refreshStudentState() async {
+Future<void> refreshStudentState()
+ async {
   try {
     final data = await ApiService.getStudentDetails(widget.regId);
     if (!mounted) return;
@@ -617,7 +624,7 @@ Widget build(BuildContext context) {
                   context: context,
                   regId: widget.regId,
                   onSuccess: () {
-                    _refreshStudentState();
+                    refreshStudentState();
                   },
                 ),
                 child: const Text(
@@ -708,7 +715,7 @@ Widget build(BuildContext context) {
                     );
 
                     if (updated == true) {
-                      _refreshStudentState();
+                      refreshStudentState();
                     }
                   },
               ),
@@ -922,7 +929,7 @@ Widget build(BuildContext context) {
                       builder: (context) => GestureDetector(
                         onTap: () async {
                           _scaffoldKey.currentState?.closeDrawer();
-                          await _refreshStudentState();
+                          await refreshStudentState();
                           if (!mounted) return;
                           _scaffoldKey.currentState?.openDrawer();
                         },
@@ -960,7 +967,7 @@ Widget build(BuildContext context) {
                                 builder: (_) => const NotificationsScreen(),
                               ),
                             );
-                            _loadUnreadCount();
+                            loadUnreadCount();
                           },
                         ),
                         if (unreadCount > 0)
@@ -1004,7 +1011,7 @@ Widget build(BuildContext context) {
                     setState(() {
                       currentIndex = index;
                     });
-                    await _refreshStudentState();
+                    await refreshStudentState();
                   },
 
                   children: [
@@ -1018,14 +1025,14 @@ Widget build(BuildContext context) {
                       mobile: widget.mobile,
                       aadhaarVerified: widget.aadhaarVerified,
                       panVerified: widget.panVerified,
-                      onNewCredit: _loadUnreadCount,
+                      onNewCredit: loadUnreadCount,
                     ),
 
                     _PayView(
                       regId: widget.regId,
                       kycProgress: kycProgress,
                       isKycCompleted: isKycCompleted,
-                      onKycUpdated: _refreshStudentState,
+                      onKycUpdated: refreshStudentState,
                        openSplitId: widget.openSplitId, 
                     ),
 
@@ -1051,7 +1058,7 @@ Widget build(BuildContext context) {
             curve: Curves.easeOut,
           );
 
-          await _refreshStudentState();
+          await refreshStudentState();
         },
 
           selectedItemColor: const Color(0xFF4C6EF5),
@@ -1147,6 +1154,7 @@ class _PayView extends StatefulWidget {
   final VoidCallback onKycUpdated;
   final int? openSplitId;
   
+  
   const _PayView({
     required this.regId,
     required this.kycProgress,
@@ -1234,7 +1242,7 @@ class _PayViewState extends State<_PayView>
   }
 String getKycMessage() {
   final dashboard =
-      context.findAncestorStateOfType<_DashboardScreenState>();
+      context.findAncestorStateOfType<DashboardScreenState>();
 
   if (dashboard == null) return "";
 
@@ -1351,7 +1359,7 @@ Future<void> _loadRecentPayees() async {
 
   void openPayment(Map to, bool isWallet) async {
     final dashboardState =
-        context.findAncestorStateOfType<_DashboardScreenState>();
+        context.findAncestorStateOfType<DashboardScreenState>();
 
     if (dashboardState == null || 
       dashboardState.upiId == null ||
@@ -1361,7 +1369,7 @@ Future<void> _loadRecentPayees() async {
       regId: widget.regId,
       onSuccess: () {
     if (dashboardState != null) {
-      dashboardState._refreshStudentState();
+      dashboardState.refreshStudentState();
     }
   },
 
@@ -1385,12 +1393,13 @@ Future<void> _loadRecentPayees() async {
     upiController.clear();
     paySuggestions.clear();
     final dashboardState =
-        context.findAncestorStateOfType<_DashboardScreenState>();
+        context.findAncestorStateOfType<DashboardScreenState>();
+
     if (dashboardState != null) {
   await dashboardState.refreshWalletNow();
-  await dashboardState._refreshStudentState();
+  await dashboardState.refreshStudentState();
 
-  dashboardState.setState(() {});
+  
 }
 
   }    
@@ -1482,7 +1491,7 @@ Future<void> refreshBalance() async {
   @override
   Widget build(BuildContext context) {
     final dashboardState =
-      context.findAncestorStateOfType<_DashboardScreenState>();
+      context.findAncestorStateOfType<DashboardScreenState>();
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 24),
@@ -1496,7 +1505,7 @@ Future<void> refreshBalance() async {
       context: context,
       regId: widget.regId,
       onSuccess: () {
-        dashboardState._refreshStudentState();
+        dashboardState.refreshStudentState();
       },
     ),
     child: Container(
@@ -1591,7 +1600,7 @@ const SizedBox(height: 16),
 GestureDetector(
   onTap: () async {
     final dashboardState =
-        context.findAncestorStateOfType<_DashboardScreenState>();
+        context.findAncestorStateOfType<DashboardScreenState>();
 
     if (dashboardState == null ||
         dashboardState.upiId == null ||
@@ -1600,7 +1609,7 @@ GestureDetector(
         context: context,
         regId: widget.regId,
         onSuccess: () {
-          dashboardState?._refreshStudentState();
+          dashboardState?.refreshStudentState();
         },
       );
       return;
@@ -1628,7 +1637,7 @@ GestureDetector(
 
       if (payResult != null) {
       await dashboardState.refreshWalletNow();
-      await dashboardState._refreshStudentState();
+      await dashboardState.refreshStudentState();
     }
     }
   },
@@ -1676,63 +1685,104 @@ Container(
   child: Column(
     children: [
       Row(
-        children: [
-          const Icon(Icons.search, color: Colors.grey),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: upiController,
-              decoration: const InputDecoration(
-                hintText: "Pay UPI ID or mobile number",
-                border: InputBorder.none,
-              ),
-              textInputAction: TextInputAction.done,
-              onChanged: (value) async {
-  // Mobile number → wallet user
-  if (isMobile(value)) {
-    paySuggestions =
-        await ApiService.searchLumeUserByMobile(value);
-  }
+  children: [
+    const Icon(Icons.search, color: Colors.grey),
+    const SizedBox(width: 10),
 
-  // Internal UPI → wallet user
-  else if (isInternalUpi(value)) {
-    paySuggestions =
-        await ApiService.searchLumeUserByUpi(value);
-  }
+    Expanded(
+      child: TextField(
+        controller: upiController,
+        decoration: const InputDecoration(
+          hintText: "Pay UPI ID or mobile number",
+          border: InputBorder.none,
+        ),
+        textInputAction: TextInputAction.done,
 
-  // External UPI → local suggestion
-  else if (isExternalUpi(value)) {
-    paySuggestions = [
-      {
-        "name": value,
-        "identifier": value,
-        "isWallet": false,
-      }
-    ];
-  }
+        onChanged: (value) async {
+        final v = value.trim();
 
-  else {
-    paySuggestions = [];
-  }
+        /// CLEAR IF EMPTY
+        if (v.isEmpty) {
+          setState(() {
+            paySuggestions = [];
+          });
+          return;
+        }
 
-  setState(() {});
-},
-              onSubmitted: (value) {
-                  if (paySuggestions.isNotEmpty) {
-                    final s = paySuggestions.first;
-                    openPayment(
-  {
-    "name": s["name"],
-    "identifier": s["identifier"],
-  },
-  s["identifier"].toString().endsWith("@lumepay"),
-);
-                  }
-                },
-            ),
-          ),
-        ],
+        if (v.length < 3) {
+          setState(() {
+            paySuggestions = [];
+          });
+          return;
+        }
+
+        /// CHECK IF ONLY DIGITS
+        final bool onlyDigits = RegExp(r'^\d+$').hasMatch(v);
+
+        /// MOBILE SEARCH → ONLY IF DIGITS
+        if (isMobile(v) || onlyDigits) {
+          paySuggestions =
+              await ApiService.searchLumeUserByMobile(v);
+        }
+
+        /// UPI SEARCH → ANY TEXT OR CONTAINS @
+        else if (isInternalUpi(v) ||
+            isExternalUpi(v) ||
+            !onlyDigits) {
+          paySuggestions =
+              await ApiService.searchLumeUserByUpi(v);
+        }
+
+        /// EXTERNAL UPI MANUAL FALLBACK
+        if (paySuggestions.isEmpty && v.contains("@")) {
+          paySuggestions = [
+            {
+              "name": v,
+              "identifier": v,
+              "isWallet": false,
+              "profile_image": null,
+            }
+          ];
+        }
+
+        setState(() {});
+      },
+
+
+        onSubmitted: (value) {
+          if (paySuggestions.isNotEmpty) {
+            final s = paySuggestions.first;
+            openPayment(
+              {
+                "name": s["name"],
+                "identifier": s["identifier"],
+              },
+              s["identifier"].toString().endsWith("@lumepay"),
+            );
+          }
+        },
       ),
+    ),
+    if (upiController.text.isNotEmpty)
+      GestureDetector(
+        onTap: () {
+          upiController.clear();
+          setState(() {
+            paySuggestions = [];
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.only(left: 6),
+          child: Icon(
+            Icons.close,
+            size: 20,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      ),
+  ],
+),
+
 // ================= RECENT PAYEES =================
 if (!loadingRecents &&
     recentPayees.isNotEmpty &&
@@ -1834,21 +1884,30 @@ if (!loadingRecents &&
           itemBuilder: (_, i) {
             final s = paySuggestions[i];
             return ListTile(
-              leading: CircleAvatar(
-                  backgroundColor:
-                      (s["isWallet"] ?? true)
-                          ? Colors.green.shade100
-                          : Colors.blue.shade100,
-                  child: Icon(
+                leading: CircleAvatar(
+                backgroundImage: (s["profile_image"] != null &&
+                        s["profile_image"].toString().isNotEmpty)
+                    ? NetworkImage(s["profile_image"])
+                    : null,
+
+                backgroundColor:
                     (s["isWallet"] ?? true)
-                        ? Icons.person
-                        : Icons.account_balance,
-                    color:
+                        ? Colors.green.shade100
+                        : Colors.blue.shade100,
+
+                child: (s["profile_image"] == null ||
+                        s["profile_image"].toString().isEmpty)
+                    ? Icon(
                         (s["isWallet"] ?? true)
+                            ? Icons.person
+                            : Icons.account_balance,
+                        color: (s["isWallet"] ?? true)
                             ? Colors.green
                             : Colors.blue,
-                  ),
-                ),
+                      )
+                    : null,
+              ),
+
               title: Text(s["name"]),
               subtitle: Text(s["identifier"]),
               onTap: () => openPayment(
@@ -2525,6 +2584,7 @@ final bool isClosed =
                                 panVerified: dashboardState?.widget.panVerified ?? 0,
                                 direction: "debit",
                                 earnedPoints: res?["earned_points"],
+                                rewardToken: res?["reward_token"],
                               ),
                               ),
                             );
@@ -2533,10 +2593,10 @@ final bool isClosed =
                             await _loadBalance();
 
                             final dashboard =
-                                context.findAncestorStateOfType<_DashboardScreenState>();
+                                context.findAncestorStateOfType<DashboardScreenState>();
 
                             await dashboard?.refreshWalletNow();
-                            await dashboard?._refreshStudentState();
+                            await dashboard?.refreshStudentState();
                             dashboard?.setState(() {});
 
                           } catch (e) {
@@ -2908,12 +2968,12 @@ void showReceivedAnimation(double amount) {
 
     showReceivedAnimation(amount);
     widget.onNewCredit();
+    final dashboard =
+context.findAncestorStateOfType<DashboardScreenState>();
 
-    final dashboardState =
-        context.findAncestorStateOfType<_DashboardScreenState>();
-
-    await dashboardState?.refreshWalletNow();
-    await dashboardState?._refreshStudentState();
+await dashboard?.loadUnreadCount();
+await dashboard?.refreshWalletNow();
+await dashboard?.refreshStudentState();
   }
 
     _lastTxnId = latest["id"];
@@ -2972,7 +3032,7 @@ Widget build(BuildContext context) {
 
                   if (result == true && mounted) {
                     final dashboardState =
-                        context.findAncestorStateOfType<_DashboardScreenState>();
+                        context.findAncestorStateOfType<DashboardScreenState>();
                     dashboardState?.setState(() {
                       dashboardState.currentIndex = 1;
                     });
@@ -3274,7 +3334,7 @@ class _WalletBalanceStripState extends State<_WalletBalanceStrip> {
       _loadBalance();
 
       final dashboardState =
-          context.findAncestorStateOfType<_DashboardScreenState>();
+          context.findAncestorStateOfType<DashboardScreenState>();
       dashboardState?.refreshWalletNow();
     }
 
@@ -3377,7 +3437,7 @@ Container(
       ? GestureDetector(
           onTap: () {
             final dashboardState =
-    context.findAncestorStateOfType<_DashboardScreenState>();
+    context.findAncestorStateOfType<DashboardScreenState>();
 
 if (dashboardState == null) return;
 
@@ -3385,7 +3445,7 @@ showCreateUpiDialog(
   context: context,
   regId: dashboardState.widget.regId,
   onSuccess: () {
-    dashboardState._refreshStudentState();
+    dashboardState.refreshStudentState();
   },
 );
 
@@ -3432,7 +3492,7 @@ const SizedBox(height: 16),
 
               if (widget.upiId.isEmpty) {
                 final dashboardState =
-    context.findAncestorStateOfType<_DashboardScreenState>();
+    context.findAncestorStateOfType<DashboardScreenState>();
 
 if (dashboardState == null) return;
 
@@ -3440,14 +3500,14 @@ showCreateUpiDialog(
   context: context,
   regId: dashboardState.widget.regId,
   onSuccess: () {
-    dashboardState._refreshStudentState();
+    dashboardState.refreshStudentState();
   },
 );
 
                 return;
               }
     final dashboardState =
-    context.findAncestorStateOfType<_DashboardScreenState>();
+    context.findAncestorStateOfType<DashboardScreenState>();
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -3522,14 +3582,50 @@ Widget build(BuildContext context) {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            const _RewardCategory(
-              icon: Icons.account_balance_wallet,
-              label: "Cash won",
+
+            /// CASH WON
+            GestureDetector(
+              onTap: () {
+                final dashboard =
+                    context.findAncestorStateOfType<DashboardScreenState>();
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CashWonScreen(
+                      regId: dashboard!.widget.regId,
+                    ),
+                  ),
+                );
+              },
+              child: const _RewardCategory(
+                icon: Icons.account_balance_wallet,
+                label: "Cash won",
+              ),
             ),
-            const _RewardCategory(
-              icon: Icons.confirmation_number,
-              label: "Coupons",
+
+            /// COUPONS
+            GestureDetector(
+              onTap: () {
+                final dashboard =
+                    context.findAncestorStateOfType<DashboardScreenState>();
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CouponsScreen(
+                      regId: dashboard!.widget.regId,
+                    ),
+                  ),
+                );
+              },
+              child: const _RewardCategory(
+                icon: Icons.confirmation_number,
+                label: "Coupons",
+              ),
             ),
+
+            /// VOUCHERS 
             GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -3546,6 +3642,7 @@ Widget build(BuildContext context) {
             ),
           ],
         ),
+
         const SizedBox(height: 28),
 
         // -------- Featured Brands --------

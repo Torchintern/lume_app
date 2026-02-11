@@ -8,6 +8,9 @@ from flask import send_from_directory
 from datetime import datetime
 import math
 import traceback
+from reward_engine import generate_reward
+
+
 def hash_pin(pin: str) -> str:
     return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
 
@@ -543,7 +546,7 @@ def _get_monthly_spent(reg_id):
 
     row = c.fetchone()
     c.close()
-
+    conn.close()
     return float(row["total"] or 0)
 
 # ========UPDATE / CREATE UPI=============
@@ -828,16 +831,26 @@ def wallet_to_wallet_transfer():
             "wallet",
             receiver["full_name"]
         )
+        txn_id = c.lastrowid
         reward = update_user_points_and_tier(
                 conn, c, sender_reg_id, amount
             )
+        token = generate_reward(
+            c,
+            sender_reg_id,
+            txn_id,
+            amount,
+            reward["tier"]
+        )
+
 
         conn.commit()
         return {
-            "message": "TRANSFER_SUCCESS",
-            "earned_points": reward.get("earned_points", 0),
-            "total_points": reward["total_points"],
-            "tier": reward["tier"]
+        "message": "TRANSFER_SUCCESS",
+        "earned_points": reward.get("earned_points", 0),
+        "total_points": reward["total_points"],
+        "tier": reward["tier"],
+        "reward_token": token
         }, 200
 
     except Exception as e:
@@ -991,16 +1004,28 @@ def wallet_to_upi_payment():
                 "upi",
                 upi_name
             )
+        txn_id = c.lastrowid
         reward = update_user_points_and_tier(
             conn, c, sender_id, amount
         )
+        
+        token = generate_reward(
+            c,
+            sender_id,
+            txn_id,
+            amount,
+            reward["tier"]
+        )
+
+    
 
         conn.commit()
         return {
-            "message": "UPI_PAYMENT_SUCCESS",
-            "earned_points": reward.get("earned_points", 0),
-            "total_points": reward["total_points"],
-            "tier": reward["tier"]
+        "message": "UPI_PAYMENT_SUCCESS",
+        "earned_points": reward.get("earned_points", 0),
+        "total_points": reward["total_points"],
+        "tier": reward["tier"],
+        "reward_token": token
         }, 200
 
 
@@ -1490,6 +1515,47 @@ def _log_add_money_txn(
 
 
 # =================  Notifications ======================
+
+# ================= ALL Notifications ======================
+@app.route("/api/notifications/<int:reg_id>", methods=["GET"])
+def get_all_notifications(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT
+                id,
+                title,
+                message,
+                type,
+                amount,
+                ref_id,
+                is_read,
+                created_at
+            FROM notifications
+            WHERE reg_id = %s
+            ORDER BY created_at DESC
+        """, (reg_id,))
+
+        rows = c.fetchall()
+
+        for r in rows:
+            if r["created_at"]:
+                r["created_at"] = r["created_at"].isoformat()
+
+        return jsonify(rows), 200
+
+    except Exception as e:
+        print("GET ALL NOTIFICATIONS ERROR:", e)
+        return jsonify([]), 200
+
+    finally:
+        c.close()
+        conn.close()
+
+# ============ Unread Notifications =====================
 @app.route("/api/notifications/unread-count/<int:reg_id>", methods=["GET"])
 def unread_notifications_count(reg_id):
     conn = get_db_connection()
@@ -1520,7 +1586,7 @@ def get_unread_notifications(reg_id):
         c.execute("""
             SELECT id, title, message, created_at, is_read
             FROM notifications
-            WHERE reg_id = %s
+            WHERE reg_id = %s AND is_read = 0
             ORDER BY created_at DESC
         """, (reg_id,))
 
@@ -1575,6 +1641,24 @@ def mark_single_notification_read(notif_id):
     conn.close()
 
     return {"message": "READ"}, 200
+
+@app.route("/api/notifications/delete/<int:notif_id>", methods=["DELETE"])
+def delete_notification(notif_id):
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        DELETE FROM notifications
+        WHERE id=%s
+    """, (notif_id,))
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"message": "DELETED"}, 200
+
 
 
 # ================= Reset PIN ==================
@@ -2827,7 +2911,7 @@ def pay_split():
             "wallet",
             split_display_name
         )
-
+        txn_id = c.lastrowid
         # ===== REWARDS UPDATE =====
         reward = update_user_points_and_tier(
                 conn,
@@ -2835,6 +2919,13 @@ def pay_split():
                 d["payer_reg_id"],
                 amount
             )
+        token = generate_reward(
+            c,
+            d["payer_reg_id"],
+            txn_id,
+            amount,
+            reward["tier"]
+        )
 
 
         conn.commit()
@@ -2847,7 +2938,8 @@ def pay_split():
             "creator_name": creator_name,
             "note": note,
             "payment_method": "wallet",
-            "paid_at": datetime.now().isoformat()
+            "paid_at": datetime.now().isoformat(),
+            "reward_token": token
         }, 200
 
 
@@ -2994,6 +3086,216 @@ def get_split_members(split_id):
     conn.close()
 
     return rows, 200
+
+# =========== Rewards ===============
+@app.route("/api/rewards/reveal", methods=["POST"])
+def reveal_reward():
+
+    d = request.json
+    token = d.get("token")
+
+    if not token:
+        return {"message": "TOKEN_REQUIRED"}, 400
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+        SELECT *
+        FROM reward_reveals
+        WHERE reveal_token=%s AND status='pending'
+        FOR UPDATE
+        """,(token,))
+
+        reward = c.fetchone()
+
+        if not reward:
+            return {"message":"INVALID_OR_ALREADY_REVEALED"},400
+
+        reg_id = reward["reg_id"]
+        txn_id = reward["txn_id"]
+        reward_type = reward["reward_type"]
+        reward_value = reward["reward_value"]
+
+        # ================= CASHBACK =================
+        if reward_type == "cashback":
+
+            amount = float(reward_value)
+
+            # Credit Wallet
+            c.execute("""
+            UPDATE wallets
+            SET balance = balance + %s
+            WHERE registered_student_id=%s
+            """,(amount, reg_id))
+
+            # Ledger Entry
+            c.execute("""
+            INSERT INTO cashback_ledger
+            (reg_id, txn_id, amount)
+            VALUES (%s,%s,%s)
+            """,(reg_id, txn_id, amount))
+
+            # Notification
+            c.execute("""
+            INSERT INTO notifications
+            (reg_id, title, message, type, amount, ref_id, is_read)
+            VALUES (%s,%s,%s,%s,%s,%s,0)
+            """,(
+                reg_id,
+                "Cashback Received",
+                f"₹{amount:.2f} cashback added to your wallet",
+                "reward",
+                amount,
+                txn_id
+            ))
+
+        # ================= COUPON =================
+        elif reward_type == "coupon":
+
+            c.execute("""
+            INSERT INTO user_coupons
+            (reg_id, coupon_code, txn_id, status)
+            VALUES (%s,%s,%s,'active')
+            """,(reg_id, reward_value, txn_id))
+
+            # Notification
+            c.execute("""
+            INSERT INTO notifications
+            (reg_id, title, message, type, ref_id, is_read)
+            VALUES (%s,%s,%s,%s,%s,0)
+            """,(
+                reg_id,
+                "Coupon Unlocked 🎉",
+                f"You received coupon {reward_value}",
+                "reward",
+                txn_id
+            ))
+
+        # ================= VOUCHER =================
+        elif reward_type == "voucher":
+
+            c.execute("""
+            INSERT INTO user_vouchers
+            (reg_id, voucher_code, txn_id, status)
+            VALUES (%s,%s,%s,'active')
+            """,(reg_id, reward_value, txn_id))
+
+            # Notification
+            c.execute("""
+            INSERT INTO notifications
+            (reg_id, title, message, type, ref_id, is_read)
+            VALUES (%s,%s,%s,%s,%s,0)
+            """,(
+                reg_id,
+                "Voucher Unlocked",
+                f"You received voucher {reward_value}",
+                "reward",
+                txn_id
+            ))
+        else:
+            return {"message": "INVALID_REWARD_TYPE"}, 400
+
+        # ================= MARK REVEALED =================
+        c.execute("""
+        UPDATE reward_reveals
+        SET status='revealed'
+        WHERE id=%s
+        """,(reward["id"],))
+
+        conn.commit()
+
+        return {
+            "type": reward_type,
+            "value": reward_value
+        }
+
+    except Exception as e:
+        conn.rollback()
+        print("REVEAL REWARD ERROR:", e)
+        return {"message": "REVEAL_FAILED"}, 500
+
+    finally:
+        c.close()
+        conn.close()
+        
+# ====== Cash won ===============
+@app.route("/api/rewards/cashwon/<int:reg_id>", methods=["GET"])
+def get_cashwon(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT
+            id,
+            txn_id,
+            amount,
+            created_at
+        FROM cashback_ledger
+        WHERE reg_id=%s
+        ORDER BY created_at DESC
+    """, (reg_id,))
+
+    data = c.fetchall()
+
+    c.close()
+    conn.close()
+
+    return {"cashwon": data}
+
+# ============== Coupons Won ==============
+@app.route("/api/rewards/coupons/<int:reg_id>", methods=["GET"])
+def get_coupons(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT
+            id,
+            coupon_code,
+            txn_id,
+            status,
+            created_at
+        FROM user_coupons
+        WHERE reg_id=%s
+        ORDER BY created_at DESC
+    """, (reg_id,))
+
+    data = c.fetchall()
+
+    c.close()
+    conn.close()
+
+    return {"coupons": data}
+
+# ============= Vouchers won =================
+@app.route("/api/rewards/vouchers/<int:reg_id>", methods=["GET"])
+def get_vouchers(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT
+            id,
+            voucher_code,
+            txn_id,
+            status,
+            created_at
+        FROM user_vouchers
+        WHERE reg_id=%s
+        ORDER BY created_at DESC
+    """, (reg_id,))
+
+    data = c.fetchall()
+
+    c.close()
+    conn.close()
+
+    return {"vouchers": data}
 
 
 #========================= RUN=========================

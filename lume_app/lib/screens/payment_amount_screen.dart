@@ -191,6 +191,7 @@ class _PaymentAmountScreenState
         panVerified: details["pan_verified"] ?? 0,
 
         earnedPoints: res?["earned_points"], 
+        rewardToken: res?["reward_token"],
       ),
     ),
   );

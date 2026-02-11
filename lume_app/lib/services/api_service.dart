@@ -534,6 +534,14 @@ static Future markNotificationRead(int notifId) async {
   );
 }
 
+static Future<bool> deleteNotification(int notifId) async {
+  final res = await http.delete(
+    Uri.parse("$baseUrl/notifications/delete/$notifId"),
+  );
+
+  return res.statusCode == 200;
+}
+
 // ================= PIN SET =================
 static Future<bool> setPin({
   required int regId,
@@ -978,6 +986,85 @@ static Future<List<dynamic>> getCreatedSplits(
   );
 
   return jsonDecode(res.body);
+}
+
+// ================= REVEAL REWARD =================
+static Future<Map<String, dynamic>?> revealReward({
+  required String token,
+}) async {
+
+  final res = await http.post(
+    Uri.parse("$baseUrl/rewards/reveal"),
+    headers: headers,
+    body: jsonEncode({
+      "token": token,
+    }),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return null;
+}
+
+// ================= CASH WON =================
+static Future<List<dynamic>> getCashWon(int regId) async {
+  try {
+    final res = await http.get(
+      Uri.parse("$baseUrl/rewards/cashwon/$regId"),
+    );
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return data["cashwon"] ?? [];
+    }
+
+    return [];
+  } catch (e) {
+    print("getCashWon error: $e");
+    return [];
+  }
+}
+
+
+
+// ================= COUPONS =================
+static Future<List<dynamic>> getCoupons(int regId) async {
+  try {
+    final res = await http.get(
+      Uri.parse("$baseUrl/rewards/coupons/$regId"),
+    );
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return data["coupons"] ?? [];
+    }
+
+    return [];
+  } catch (e) {
+    print("getCoupons error: $e");
+    return [];
+  }
+}
+
+//  ============== Vouchers ======================
+static Future<List<dynamic>> getVouchers(int regId) async {
+  try {
+    final res = await http.get(
+      Uri.parse("$baseUrl/rewards/vouchers/$regId"),
+    );
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return data["vouchers"] ?? [];
+    }
+
+    return [];
+  } catch (e) {
+    print("getVouchers error: $e");
+    return [];
+  }
 }
 
 

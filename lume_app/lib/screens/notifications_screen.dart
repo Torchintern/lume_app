@@ -30,7 +30,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       final regId = ApiService.currentUserRegId;
       if (regId == null) return;
 
-      final res = await ApiService.getUnreadNotifications(regId);
+     final res = await ApiService.getAllNotifications(regId);
 
       setState(() {
         notifications = res;
@@ -73,12 +73,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await ApiService.markNotificationRead(notifId);
 
       setState(() {
-        for (var n in notifications) {
-          if (n["id"] == notifId) {
-            n["is_read"] = 1;
-          }
+      for (var n in notifications) {
+        if (n["id"] == notifId) {
+          n["is_read"] = 1;
         }
-      });
+      }
+
+      for (var n in filtered) {
+        if (n["id"] == notifId) {
+          n["is_read"] = 1;
+        }
+      }
+    });
+
 
     } catch (e) {
       print("MARK READ ERROR: $e");
@@ -229,89 +236,125 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
 
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+      child: Dismissible(
+        key: Key(n["id"].toString()),
+        direction: DismissDirection.endToStart, // Right → Left
 
-        onTap: () async {
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            color: Colors.red,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(Icons.delete, color: Colors.white),
+        ),
 
-          final regId = ApiService.currentUserRegId;
-          if (regId == null) return;
+        onDismissed: (_) async {
 
-          final user =
-              await ApiService.getStudentDetails(regId);
+          final success =
+              await ApiService.deleteNotification(n["id"]);
 
-          await markRead(n["id"]);
+          if (success) {
+            setState(() {
+              notifications.removeWhere(
+                  (e) => e["id"] == n["id"]);
+              filtered.removeWhere(
+                  (e) => e["id"] == n["id"]);
+            });
 
-          if (n["type"] == "system") {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => DashboardScreen(
-                  regId: regId,
-                  fullName: user["full_name"],
-                  mobile: user["mobile"],
-                  upiId: user["upi_id"],
-                  walletStatus: user["wallet_status"],
-                  aadhaarVerified: user["aadhaar_verified"],
-                  panVerified: user["pan_verified"],
-                  initialTab: "pay",
-                  openSplitId: n["ref_id"],
-                ),
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Notification removed"),
               ),
             );
           }
         },
 
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(color: Colors.black12, blurRadius: 6),
-            ],
-          ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () async {
+            final regId = ApiService.currentUserRegId;
+            if (regId == null) return;
 
-          child: Row(
-            children: [
+            final user =
+                await ApiService.getStudentDetails(regId);
 
-              /// 🔵 UNREAD DOT
-              if (n["is_read"] == 0)
-                Container(
-                  width: 10,
-                  height: 10,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF4C6EF5),
-                    shape: BoxShape.circle,
+            await markRead(n["id"]);
+
+            if (n["type"] == "system") {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DashboardScreen(
+                    regId: regId,
+                    fullName: user["full_name"],
+                    mobile: user["mobile"],
+                    upiId: user["upi_id"],
+                    walletStatus: user["wallet_status"],
+                    aadhaarVerified: user["aadhaar_verified"],
+                    panVerified: user["pan_verified"],
+                    initialTab: "pay",
+                    openSplitId: n["ref_id"],
                   ),
-                )
-              else
-                const SizedBox(width: 10),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      n["title"] ?? "",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      n["message"] ?? "",
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
                 ),
-              ),
-            ],
+              );
+            }
+          },
+
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: n["is_read"] == 1
+                  ? Colors.grey.shade100
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(color: Colors.black12, blurRadius: 6),
+              ],
+            ),
+
+            child: Row(
+              children: [
+
+                if (n["is_read"] == 0)
+                  Container(
+                    width: 10,
+                    height: 10,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF4C6EF5),
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                else
+                  const SizedBox(width: 10),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        n["title"] ?? "",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        n["message"] ?? "",
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
