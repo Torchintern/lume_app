@@ -198,45 +198,120 @@ class _PaymentAmountScreenState
 }
 
 
-  void _showWalletPinRequiredDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Text(
-          "Wallet PIN not set",
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        content: const Text(
-          "Please set your Wallet PIN to continue payments.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PinSettingsScreen(
-                    regId: widget.regId,
-                    forceSetup: true,
+ void _showWalletPinRequiredDialog() {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    barrierColor: Colors.black.withOpacity(.4),
+    builder: (_) {
+      return Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.88,
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                )
+              ],
+            ),
+
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                /// TITLE
+                const Text(
+                  "Wallet PIN not set",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              );
-            },
-            child: const Text("Go to Wallet PIN"),
+
+                const SizedBox(height: 10),
+
+                /// DESCRIPTION
+                const Text(
+                  "Please set your Wallet PIN to continue payments.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.grey,
+                    height: 1.4,
+                  ),
+                ),
+
+                const SizedBox(height: 22),
+
+                /// BUTTONS ROW
+                Row(
+                  children: [
+
+                    /// CANCEL
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          "Cancel",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 10),
+
+                    /// GO TO PIN BUTTON
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PinSettingsScreen(
+                                regId: widget.regId,
+                                forceSetup: true,
+                              ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xFFEEF1F7),
+                          foregroundColor: const Color(0xFF4C6EF5),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text(
+                          "Go to Wallet PIN",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   @override
   Widget build(BuildContext context) {

@@ -36,6 +36,7 @@ import '../widgets/liquid_progress_bar.dart';
 import 'payment_result_screen.dart';
 import 'package:lume_app/screens/rewards/cash_won_screen.dart';
 import 'package:lume_app/screens/rewards/coupons_screen.dart';
+import 'rewards/rewards_view_all_sheet.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -75,6 +76,8 @@ class DashboardScreenState extends State<DashboardScreen>
   DateTime? _lastPausedTime;
   int currentIndex = 2;
   int unreadCount = 0;
+  int unrevealedRewardsCount = 0;
+
   bool aadhaarVerified = false;
   bool panVerified = false;
   String walletStatus = "inactive";
@@ -89,7 +92,7 @@ class DashboardScreenState extends State<DashboardScreen>
   String backendTier = "silver";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   String appVersion = "";
-
+  
 Future<void> _checkAndAuthenticate() async {
   if (_unlocked || _authInProgress) return;
 
@@ -137,12 +140,22 @@ Future<void> _checkAndAuthenticate() async {
 
   // ================= USER HELPERS =================
   String get initials {
-    if (widget.fullName.trim().isEmpty) return "XO";
-    final parts = widget.fullName.trim().split(" ");
-    return parts.length >= 2
-        ? "${parts[0][0]}${parts[1][0]}".toUpperCase()
-        : widget.fullName.substring(0, 2).toUpperCase();
+  final name = widget.fullName.trim();
+  if (name.isEmpty) return "XO";
+
+  final parts = name.split(" ");
+
+  if (parts.length >= 2) {
+    return "${parts[0][0]}${parts[1][0]}".toUpperCase();
   }
+
+  if (name.length == 1) {
+    return name[0].toUpperCase();
+  }
+
+  return name.substring(0, 2).toUpperCase();
+}
+
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
@@ -210,6 +223,15 @@ Future<void> refreshWalletNow() async {
 }
 
 
+Future<void> refreshAllCounts() async {
+  await Future.wait([
+    loadUnreadCount(),
+    loadUnrevealedRewardsCount(),
+  ]);
+
+  if (!mounted) return;
+  setState(() {});
+}
 
 
 Future<void> _pickImage(ImageSource source) async {
@@ -316,6 +338,23 @@ Future<void> loadUnreadCount()
   }
 }
 
+Future<void> loadUnrevealedRewardsCount() async {
+  try {
+    final data =
+        await ApiService.getPendingDragRewards(widget.regId);
+
+    if (!mounted) return;
+
+    setState(() {
+      unrevealedRewardsCount = data.length;
+    });
+
+  } catch (e) {
+    print("Rewards count load error = $e");
+  }
+}
+
+
 @override
 void initState() {
   super.initState();
@@ -340,7 +379,12 @@ void initState() {
 
   _pageController = PageController(initialPage: currentIndex);
   loadUnreadCount();
+  loadUnrevealedRewardsCount();
   refreshStudentState();
+  Future.delayed(const Duration(seconds: 2), () {
+    loadUnrevealedRewardsCount();
+  });
+
 }
 
 
@@ -403,6 +447,8 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
       _unlocked = false;
       _checkAndAuthenticate();
     }
+    refreshAllCounts();
+
   }
 }
 
@@ -479,6 +525,8 @@ Future<void> refreshStudentState()
       kycProgress = percent / 100;
       isKycCompleted = kycProgress == 1.0;
     });
+    await loadUnrevealedRewardsCount();
+
   } catch (_) {}
 }
 
@@ -578,6 +626,7 @@ Widget build(BuildContext context) {
                     right: 0,
                     bottom: 0,
                     child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
                       onTap: _pickProfileImage,
                       child: Container(
                         height: 22,
@@ -1008,11 +1057,14 @@ Widget build(BuildContext context) {
                 child: PageView(
                   controller: _pageController,
                   onPageChanged: (index) async {
-                    setState(() {
-                      currentIndex = index;
-                    });
-                    await refreshStudentState();
-                  },
+                      setState(() {
+                        currentIndex = index;
+                      });
+
+                      await refreshStudentState();
+                      await refreshAllCounts();
+
+                    },
 
                   children: [
                     const Center(child: Text("Card Coming Soon")),
@@ -1036,7 +1088,9 @@ Widget build(BuildContext context) {
                        openSplitId: widget.openSplitId, 
                     ),
 
-                    const _RewardsView(),
+                    _RewardsView(
+                      dashboardCount: unrevealedRewardsCount,
+                    ),
                   ],
                 ),
               ),
@@ -1169,6 +1223,8 @@ class _PayView extends StatefulWidget {
 }
 class _PayViewState extends State<_PayView>
     with SingleTickerProviderStateMixin {
+
+  bool _animRunning = true;
   double balance = 0.0;
   bool loading = true;
   bool showBalance = false;
@@ -1282,18 +1338,26 @@ void initState() {
 
   @override
   void dispose() {
+    _animRunning = false;
     super.dispose();
   }
+
 
 
 void _openSplitFromNotification(int splitId) async {
 
   await _loadSplitRequests();
 
-  final split = splitRequests.firstWhere(
-    (s) => (s["split_id"] ?? s["id"]) == splitId,
-    orElse: () => null,
-  );
+  dynamic split;
+
+  try {
+    split = splitRequests.firstWhere(
+      (s) => (s["split_id"] ?? s["id"]) == splitId,
+    );
+  } catch (_) {
+    split = null;
+  }
+
 
   if (split != null) {
     // future scroll logic
@@ -1323,7 +1387,7 @@ Future<void> _loadSplitRequests() async {
 
 
   void _startInnerAnimationLoop() async {
-  while (mounted) {
+  while (mounted && _animRunning) {
     await Future.delayed(const Duration(milliseconds: 1200));
     if (!mounted) return;
     setState(() => showScanner = true);
@@ -1944,7 +2008,9 @@ if (!loadingRecents &&
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => CashbackStoreScreen(),
+                    builder: (_) => CashbackStoreScreen(
+                      regId: widget.regId,
+                    ),
                   ),
                 );
               },
@@ -2974,6 +3040,7 @@ context.findAncestorStateOfType<DashboardScreenState>();
 await dashboard?.loadUnreadCount();
 await dashboard?.refreshWalletNow();
 await dashboard?.refreshStudentState();
+await dashboard?.loadUnrevealedRewardsCount();
   }
 
     _lastTxnId = latest["id"];
@@ -3557,16 +3624,97 @@ showCreateUpiDialog(
 const double kRewardCardHeight = 90;
 const double kRewardCardRadius = 18;
 class _RewardsView extends StatefulWidget {
-  const _RewardsView();
+  final int dashboardCount;
+
+  const _RewardsView({
+    required this.dashboardCount,
+  });
 
   @override
   State<_RewardsView> createState() => _RewardsViewState();
 }
 class _RewardsViewState extends State<_RewardsView>
     with AutomaticKeepAliveClientMixin {
-  
+
+    List<dynamic> pendingDragRewards = [];
+    bool loadingPendingRewards = true;
+    bool revealingReward = false;
+
+Future<void> loadPendingDragRewards() async {
+  try {
+    final dashboard =
+        context.findAncestorStateOfType<DashboardScreenState>();
+
+    if (dashboard == null) return;
+
+    final data = await ApiService.getPendingDragRewards(
+      dashboard.widget.regId,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      pendingDragRewards = data;
+      loadingPendingRewards = false;
+    });
+
+  } catch (_) {
+    if (!mounted) return;
+    setState(() {
+      loadingPendingRewards = false;
+    });
+  }
+}
+
+
   @override
   bool get wantKeepAlive => true;
+
+ @override
+void initState() {
+  super.initState();
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    loadPendingDragRewards();
+  });
+}
+
+void openRewardsSheet() {
+
+  final dashboard =
+      context.findAncestorStateOfType<DashboardScreenState>();
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(24),
+      ),
+    ),
+    builder: (_) {
+
+      return DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        minChildSize: 0.6,
+        builder: (_, controller) {
+
+          return RewardsViewAllSheet(
+            scrollController: controller,
+            regId: dashboard!.widget.regId,
+          );
+        },
+      );
+    },
+  ).then((_) async {
+    await dashboard?.loadUnrevealedRewardsCount();
+    await loadPendingDragRewards();
+  });
+}
+
 
  @override
 Widget build(BuildContext context) {
@@ -3628,12 +3776,17 @@ Widget build(BuildContext context) {
             /// VOUCHERS 
             GestureDetector(
               onTap: () {
+                final dashboard =
+                context.findAncestorStateOfType<DashboardScreenState>();
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const MyVouchersScreen(),
+                    builder: (_) => MyVouchersScreen(
+                      regId: dashboard!.widget.regId,
+                    ),
                   ),
                 );
+
               },
               child: const _RewardCategory(
                 icon: Icons.card_giftcard,
@@ -3644,6 +3797,92 @@ Widget build(BuildContext context) {
         ),
 
         const SizedBox(height: 28),
+
+
+    /// ================= MY REWARDS =================
+Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+
+    Row(
+      children: [
+        const Text(
+          "My Rewards",
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
+        const SizedBox(width: 8),
+
+        if (widget.dashboardCount > 0)
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 3,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              widget.dashboardCount.toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+      ],
+    ),
+
+    TextButton(
+      onPressed: openRewardsSheet,
+      child: const Text("View All"),
+    ),
+  ],
+),
+
+
+const SizedBox(height: 16),
+
+/// ===== CONTENT =====
+if (loadingPendingRewards)
+  const Center(
+    child: Padding(
+      padding: EdgeInsets.symmetric(vertical: 30),
+      child: CircularProgressIndicator(),
+    ),
+  )
+
+else ...[
+
+  Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Text(
+      widget.dashboardCount > 0
+      ? widget.dashboardCount == 1
+          ? "1 reward waiting to be revealed"
+          : "${widget.dashboardCount} rewards waiting to be revealed"
+      : "No pending rewards",
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontWeight: FontWeight.w600,
+        color: widget.dashboardCount > 0
+            ? Colors.black
+            : Colors.grey,
+      ),
+    ),
+  ),
+
+],
 
         // -------- Featured Brands --------
         const Text(
@@ -3728,6 +3967,7 @@ Widget build(BuildContext context) {
         ),
 
         const SizedBox(height: 24),
+
 
       ],
     )

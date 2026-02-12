@@ -3,11 +3,17 @@ import '../../services/api_service.dart';
 import 'package:lume_app/screens/cashback_store_screen.dart';
 
 class MyVouchersScreen extends StatefulWidget {
-  const MyVouchersScreen({super.key});
+  final int regId;
+
+  const MyVouchersScreen({
+    super.key,
+    required this.regId,
+  });
 
   @override
   State<MyVouchersScreen> createState() => _MyVouchersScreenState();
 }
+
 
 class _MyVouchersScreenState extends State<MyVouchersScreen> {
 
@@ -20,28 +26,23 @@ class _MyVouchersScreenState extends State<MyVouchersScreen> {
     _loadVouchers();
   }
 
-  Future<void> _loadVouchers() async {
-    try {
-      final regId = ApiService.currentUserRegId;
+ Future<void> _loadVouchers() async {
+  try {
 
-      if (regId == null) {
-        setState(() => loading = false);
-        return;
-      }
+    final data = await ApiService.getVouchers(widget.regId);
 
-      final data = await ApiService.getVouchers(regId);
+    if (!mounted) return;
 
-      if (!mounted) return;
+    setState(() {
+      vouchers = data;
+      loading = false;
+    });
 
-      setState(() {
-        vouchers = data;
-        loading = false;
-      });
-
-    } catch (e) {
-      setState(() => loading = false);
-    }
+  } catch (e) {
+    setState(() => loading = false);
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +68,7 @@ class _MyVouchersScreenState extends State<MyVouchersScreen> {
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : vouchers.isEmpty
-              ? _EmptyState()
+              ? _EmptyState(regId: widget.regId)
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: vouchers.length,
@@ -148,6 +149,12 @@ class _MyVouchersScreenState extends State<MyVouchersScreen> {
 
 // ================= EMPTY STATE =================
 class _EmptyState extends StatelessWidget {
+  final int regId;
+
+  const _EmptyState({
+    required this.regId,
+  });
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -188,7 +195,9 @@ class _EmptyState extends StatelessWidget {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const CashbackStoreScreen(),
+                    builder: (_) => CashbackStoreScreen(
+                      regId: regId,
+                    ),
                   ),
                 );
               },
@@ -217,3 +226,4 @@ class _EmptyState extends StatelessWidget {
     );
   }
 }
+

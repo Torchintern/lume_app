@@ -534,13 +534,20 @@ static Future markNotificationRead(int notifId) async {
   );
 }
 
-static Future<bool> deleteNotification(int notifId) async {
-  final res = await http.delete(
-    Uri.parse("$baseUrl/notifications/delete/$notifId"),
-  );
+static Future<bool> deleteNotification(int id) async {
+  try {
+    final res = await http.delete(
+      Uri.parse("$baseUrl/notifications/delete/$id"),
+    );
 
-  return res.statusCode == 200;
+    return res.statusCode == 200;
+
+  } catch (e) {
+    print("DELETE NOTIFICATION ERROR: $e");
+    return false;
+  }
 }
+
 
 // ================= PIN SET =================
 static Future<bool> setPin({
@@ -991,6 +998,7 @@ static Future<List<dynamic>> getCreatedSplits(
 // ================= REVEAL REWARD =================
 static Future<Map<String, dynamic>?> revealReward({
   required String token,
+  required int regId,
 }) async {
 
   final res = await http.post(
@@ -998,6 +1006,7 @@ static Future<Map<String, dynamic>?> revealReward({
     headers: headers,
     body: jsonEncode({
       "token": token,
+      "reg_id": regId,
     }),
   );
 
@@ -1007,6 +1016,8 @@ static Future<Map<String, dynamic>?> revealReward({
 
   return null;
 }
+
+
 
 // ================= CASH WON =================
 static Future<List<dynamic>> getCashWon(int regId) async {
@@ -1063,6 +1074,34 @@ static Future<List<dynamic>> getVouchers(int regId) async {
     return [];
   } catch (e) {
     print("getVouchers error: $e");
+    return [];
+  }
+}
+
+ // ================= PENDING DRAG REWARDS =================
+static Future<List<dynamic>> getPendingDragRewards(int regId) async {
+  try {
+    final res = await http.get(
+      Uri.parse("$baseUrl/rewards/pending-drag/$regId"),
+      headers: headers,
+    );
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+
+      if (data is Map && data["rewards"] != null) {
+        return data["rewards"];
+      }
+
+      if (data is List) {
+        return data;
+      }
+
+      return [];
+    }
+
+    return [];
+  } catch (e) {
     return [];
   }
 }

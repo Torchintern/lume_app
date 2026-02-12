@@ -20,11 +20,17 @@ class PromoBrand {
 }
 
 class CashbackStoreScreen extends StatefulWidget {
-  const CashbackStoreScreen({super.key});
+  final int regId;
+
+  const CashbackStoreScreen({
+    super.key,
+    required this.regId,
+  });
 
   @override
   State<CashbackStoreScreen> createState() => _CashbackStoreScreenState();
 }
+
 
 class _CashbackStoreScreenState extends State<CashbackStoreScreen>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
@@ -215,7 +221,9 @@ class _CashbackStoreScreenState extends State<CashbackStoreScreen>
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const MyVouchersScreen(),
+                                builder: (_) => MyVouchersScreen(
+                                  regId: widget.regId,
+                                ),
                               ),
                             );
                           },
@@ -228,7 +236,9 @@ class _CashbackStoreScreenState extends State<CashbackStoreScreen>
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => const MyVouchersScreen(),
+                                 builder: (_) => MyVouchersScreen(
+                                      regId: widget.regId,
+                                    ),
                                 ),
                               );
                             },
@@ -341,8 +351,11 @@ class _CashbackStoreScreenState extends State<CashbackStoreScreen>
 
             SliverPersistentHeader(
               pinned: true,
-              delegate: _SearchHeaderDelegate(),
+              delegate: _SearchHeaderDelegate(
+                regId: widget.regId,
+              ),
             ),
+
 
             SliverPersistentHeader(
               pinned: true,
@@ -421,6 +434,10 @@ class _CashbackStoreScreenState extends State<CashbackStoreScreen>
 
 // ================= STICKY SEARCH =================
 class _SearchHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final int regId;
+
+  _SearchHeaderDelegate({required this.regId});
+
   @override
   double get minExtent => 70;
 
@@ -440,7 +457,9 @@ class _SearchHeaderDelegate extends SliverPersistentHeaderDelegate {
         onTap: () {
           showSearch(
             context: context,
-            delegate: _CashbackSearchDelegate(),
+            delegate: _CashbackSearchDelegate(
+              regId: regId,
+            ),
           );
         },
         child: Container(
@@ -471,6 +490,7 @@ class _SearchHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(_) => false;
 }
+
 
 
 // ================= STICKY CATEGORIES =================
@@ -657,6 +677,9 @@ class _HowStep extends StatelessWidget {
   }
 }
 class _CashbackSearchDelegate extends SearchDelegate {
+  final int regId;
+
+  _CashbackSearchDelegate({required this.regId});
   @override
   String get searchFieldLabel => "Search brands or categories";
 

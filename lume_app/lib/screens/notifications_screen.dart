@@ -43,6 +43,55 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       setState(() => loading = false);
     }
   }
+  // Message
+  void showDashboardMessage(String msg) {
+  final overlay = Overlay.of(context);
+
+  final entry = OverlayEntry(
+    builder: (_) => Positioned(
+      top: 80,
+      left: 20,
+      right: 20,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFF4C6EF5),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 10),
+            ],
+          ),
+          child: Row(
+            children: const [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "Notification removed",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  overlay.insert(entry);
+
+  Future.delayed(const Duration(seconds: 2), () {
+    entry.remove();
+  });
+}
 
   /// ================= SEARCH =================
   void onSearch(String q) {
@@ -256,19 +305,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               await ApiService.deleteNotification(n["id"]);
 
           if (success) {
-            setState(() {
-              notifications.removeWhere(
-                  (e) => e["id"] == n["id"]);
-              filtered.removeWhere(
-                  (e) => e["id"] == n["id"]);
-            });
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("Notification removed"),
-              ),
-            );
-          }
+          await loadNotifications();
+          showDashboardMessage("Notification removed");
+        }
         },
 
         child: InkWell(

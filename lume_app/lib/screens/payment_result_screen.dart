@@ -65,6 +65,7 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
   bool rewardRevealed = false;
   String? revealedRewardValue;
   bool isClaiming = false;
+  
 
 
   @override
@@ -180,174 +181,127 @@ Date: $formattedTime
 
 
   // ================= CASHBACK SHEET =================
-void _openCashbackSheet() {
+  void _openRewardCenterSheet() {
 
-  showModalBottomSheet(
-    context: context,
-    isDismissible: true,
-    enableDrag: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) {
-      return StatefulBuilder(
-        builder: (context, setSheetState) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(.4),
+      builder: (_) {
 
-          Future<void> claim() async {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
 
-            if (pendingRewardToken == null || isClaiming) return;
+            Future<void> autoReveal() async {
 
-            setSheetState(() => isClaiming = true);
+              if (pendingRewardToken == null || rewardRevealed) return;
 
-            final res = await ApiService.revealReward(
-              token: pendingRewardToken!,
-            );
+              final res = await ApiService.revealReward(
+                token: pendingRewardToken!,
+                regId: widget.regId,
+              );
 
-            if (res == null) {
-              setSheetState(() => isClaiming = false);
-              return;
+              if (res == null || !mounted) return;
+
+              final type = res["type"];
+              final value = res["value"];
+
+              setState(() {
+                rewardRevealed = true;
+                revealedRewardType = type;
+                revealedRewardValue = value.toString();
+                pendingRewardToken = null;
+
+                if (type == "cashback") {
+                  cashbackReceived =
+                      double.tryParse(value.toString()) ?? 0;
+                }
+              });
+
+              setSheetState(() {});
             }
 
-            final type = res["type"];
-            final value = res["value"];
+            Future<void> claim() async {
 
-            setState(() {
-              rewardRevealed = true;
-              revealedRewardType = type;
-              revealedRewardValue = value.toString();
-              pendingRewardToken = null;
+              if (isClaiming) return;
 
-              if (type == "cashback") {
-                cashbackReceived =
-                    double.tryParse(value.toString()) ?? 0;
-              }
+              setSheetState(() => isClaiming = true);
+
+              final dashboard =
+                  context.findAncestorStateOfType<DashboardScreenState>();
+
+              await dashboard?.refreshWalletNow();
+              await dashboard?.refreshStudentState();
+              await dashboard?.refreshAllCounts();
+
+              if (mounted) Navigator.pop(context);
+            }
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              autoReveal();
             });
 
-            setSheetState(() => isClaiming = false);
-
-            final dashboard =
-                context.findAncestorStateOfType<DashboardScreenState>();
-
-            await dashboard?.refreshWalletNow();
-            await dashboard?.refreshStudentState();
-            await dashboard?.loadUnreadCount();
-          }
-
-          return Container(
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF7F8FC),
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-
-                /// ===== DRAG HANDLE =====
-                Container(
-                  height: 5,
-                  width: 60,
+            return Center(
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.88,
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(20),
+                    color: const Color(0xFFF7F8FC),
+                    borderRadius: BorderRadius.circular(28),
                   ),
-                ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
 
-                const SizedBox(height: 20),
-
-                /// ===== TITLE =====
-                const Text(
-                  "Your Reward",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                /// ===== BEFORE CLAIM =====
-                if (!rewardRevealed && pendingRewardToken != null) ...[
-                  _rewardPlaceholderCard(),
-
-                  const SizedBox(height: 20),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: isClaiming ? null : claim,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4C6EF5),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                      const Text(
+                        "Your Reward",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      child: isClaiming
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text(
-                              "Reveal Reward",
-                              style: TextStyle(fontSize: 16),
+
+                      const SizedBox(height: 24),
+
+                      if (!rewardRevealed)
+                        const CircularProgressIndicator()
+                      else ...[
+                        _rewardResultCard(),
+
+                        const SizedBox(height: 24),
+
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: isClaiming ? null : claim,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4C6EF5),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
                             ),
-                    ),
-                  ),
-                ]
-
-                /// ===== AFTER CLAIM =====
-                else ...[
-                  _rewardResultCard(),
-
-                  const SizedBox(height: 20),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4C6EF5),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                            child: isClaiming
+                                ? const CircularProgressIndicator(color: Colors.white)
+                                : const Text("Claim"),
+                          ),
                         ),
-                      ),
-                      child: const Text("Done"),
-                    ),
+                      ]
+                    ],
                   ),
-                ],
-              ],
-            ),
-          );
-        },
-      );
-    },
-  );
-}
-Widget _rewardPlaceholderCard() {
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(.05),
-          blurRadius: 12,
-        ),
-      ],
-    ),
-    child: Column(
-      children: const [
-        Icon(Icons.card_giftcard, size: 48, color: Color(0xFF4C6EF5)),
-        SizedBox(height: 12),
-        Text(
-          "Tap Reveal to see your reward 🎁",
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-      ],
-    ),
-  );
-}
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+
+
 
 
 Widget _rewardResultCard() {
@@ -514,14 +468,18 @@ Widget _rewardResultCard() {
 
               /// Cashback Dragger
               if (widget.status == "success" &&
-   (pendingRewardToken != null || cashbackReceived != null || revealedRewardType != null)) ...[
+              (pendingRewardToken != null || cashbackReceived != null || revealedRewardType != null)) ...[
+
                 const SizedBox(height: 16),
+
+                /// SHOW DRAGGER ONLY BEFORE OPEN
                 CashbackDragger(
-                  onOpen: _openCashbackSheet,
+                  onOpen: _openRewardCenterSheet,
                   rewardAmount: cashbackReceived,
                   rewardType: revealedRewardType,
                 ),
               ],
+
 
               const SizedBox(height: 30),
 

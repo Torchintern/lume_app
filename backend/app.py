@@ -3092,36 +3092,67 @@ def get_split_members(split_id):
 def reveal_reward():
 
     d = request.json
+
+    if not d:
+        return {"message": "INVALID_REQUEST"}, 400
+
     token = d.get("token")
+    reg_id_from_request = d.get("reg_id")
 
     if not token:
         return {"message": "TOKEN_REQUIRED"}, 400
+
+    if not reg_id_from_request:
+        return {"message": "REG_ID_REQUIRED"}, 400
 
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
     try:
+        # ================= FETCH + LOCK REWARD =================
         c.execute("""
         SELECT *
         FROM reward_reveals
-        WHERE reveal_token=%s AND status='pending'
+        WHERE reveal_token=%s AND reg_id=%s
         FOR UPDATE
-        """,(token,))
+        """,(token, reg_id_from_request))
 
         reward = c.fetchone()
+        c.fetchall()
 
         if not reward:
-            return {"message":"INVALID_OR_ALREADY_REVEALED"},400
+            return {"message":"INVALID_TOKEN"},400
+
+        # ================= IDEMPOTENT RETURN =================
+        if reward["status"] == "revealed":
+            return {
+                "type": reward["reward_type"],
+                "value": reward["reward_value"],
+                "already_revealed": True
+            }
 
         reg_id = reward["reg_id"]
         txn_id = reward["txn_id"]
         reward_type = reward["reward_type"]
         reward_value = reward["reward_value"]
 
+        # Normalize cashback value
+        if reward_type == "cashback":
+            reward_value = float(reward_value)
+
         # ================= CASHBACK =================
         if reward_type == "cashback":
 
             amount = float(reward_value)
+
+            # LOCK WALLET FIRST
+            c.execute("""
+            SELECT balance
+            FROM wallets
+            WHERE registered_student_id=%s
+            FOR UPDATE
+            """,(reg_id,))
+            c.fetchone()
 
             # Credit Wallet
             c.execute("""
@@ -3137,63 +3168,87 @@ def reveal_reward():
             VALUES (%s,%s,%s)
             """,(reg_id, txn_id, amount))
 
-            # Notification
+            # Prevent duplicate notification
             c.execute("""
-            INSERT INTO notifications
-            (reg_id, title, message, type, amount, ref_id, is_read)
-            VALUES (%s,%s,%s,%s,%s,%s,0)
-            """,(
-                reg_id,
-                "Cashback Received",
-                f"₹{amount:.2f} cashback added to your wallet",
-                "reward",
-                amount,
-                txn_id
-            ))
+            SELECT id FROM notifications
+            WHERE reg_id=%s AND ref_id=%s AND type='reward'
+            LIMIT 1
+            """,(reg_id, txn_id))
+
+            if not c.fetchone():
+                c.execute("""
+                INSERT INTO notifications
+                (reg_id, title, message, type, amount, ref_id, is_read)
+                VALUES (%s,%s,%s,%s,%s,%s,0)
+                """,(
+                    reg_id,
+                    "Cashback Received",
+                    f"₹{amount:.2f} cashback added to your wallet",
+                    "reward",
+                    amount,
+                    txn_id
+                ))
 
         # ================= COUPON =================
         elif reward_type == "coupon":
 
+            # Insert coupon
             c.execute("""
             INSERT INTO user_coupons
             (reg_id, coupon_code, txn_id, status)
             VALUES (%s,%s,%s,'active')
             """,(reg_id, reward_value, txn_id))
 
-            # Notification
+            # Prevent duplicate notification
             c.execute("""
-            INSERT INTO notifications
-            (reg_id, title, message, type, ref_id, is_read)
-            VALUES (%s,%s,%s,%s,%s,0)
-            """,(
-                reg_id,
-                "Coupon Unlocked 🎉",
-                f"You received coupon {reward_value}",
-                "reward",
-                txn_id
-            ))
+            SELECT id FROM notifications
+            WHERE reg_id=%s AND ref_id=%s AND type='reward'
+            LIMIT 1
+            """,(reg_id, txn_id))
+
+            if not c.fetchone():
+                c.execute("""
+                INSERT INTO notifications
+                (reg_id, title, message, type, ref_id, is_read)
+                VALUES (%s,%s,%s,%s,%s,0)
+                """,(
+                    reg_id,
+                    "Coupon Unlocked 🎉",
+                    f"You received coupon {reward_value}",
+                    "reward",
+                    txn_id
+                ))
 
         # ================= VOUCHER =================
         elif reward_type == "voucher":
 
+            # Insert voucher
             c.execute("""
             INSERT INTO user_vouchers
             (reg_id, voucher_code, txn_id, status)
             VALUES (%s,%s,%s,'active')
             """,(reg_id, reward_value, txn_id))
 
-            # Notification
+            # Prevent duplicate notification
             c.execute("""
-            INSERT INTO notifications
-            (reg_id, title, message, type, ref_id, is_read)
-            VALUES (%s,%s,%s,%s,%s,0)
-            """,(
-                reg_id,
-                "Voucher Unlocked",
-                f"You received voucher {reward_value}",
-                "reward",
-                txn_id
-            ))
+            SELECT id FROM notifications
+            WHERE reg_id=%s AND ref_id=%s AND type='reward'
+            LIMIT 1
+            """,(reg_id, txn_id))
+
+            if not c.fetchone():
+                c.execute("""
+                INSERT INTO notifications
+                (reg_id, title, message, type, ref_id, is_read)
+                VALUES (%s,%s,%s,%s,%s,0)
+                """,(
+                    reg_id,
+                    "Voucher Unlocked",
+                    f"You received voucher {reward_value}",
+                    "reward",
+                    txn_id
+                ))
+
         else:
             return {"message": "INVALID_REWARD_TYPE"}, 400
 
@@ -3219,7 +3274,7 @@ def reveal_reward():
     finally:
         c.close()
         conn.close()
-        
+
 # ====== Cash won ===============
 @app.route("/api/rewards/cashwon/<int:reg_id>", methods=["GET"])
 def get_cashwon(reg_id):
@@ -3296,6 +3351,39 @@ def get_vouchers(reg_id):
     conn.close()
 
     return {"vouchers": data}
+
+# ================= PENDING DRAG REWARDS =================
+@app.route("/api/rewards/pending-drag/<int:reg_id>", methods=["GET"])
+def get_pending_drag_rewards(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT
+                reveal_token AS reward_token,
+                txn_id,
+                created_at
+            FROM reward_reveals
+            WHERE reg_id = %s
+            AND status = 'pending'
+            ORDER BY created_at DESC
+        """, (reg_id,))
+
+        rows = c.fetchall()
+
+        return {
+            "rewards": rows
+        }, 200
+
+    except Exception as e:
+        print("PENDING DRAG REWARD ERROR:", e)
+        return {"rewards": []}, 200
+
+    finally:
+        c.close()
+        conn.close()
 
 
 #========================= RUN=========================
