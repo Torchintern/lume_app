@@ -156,7 +156,7 @@ class TransactionTile extends StatelessWidget {
       return "Received from $safeName";
     }
     if (direction == "topup") {
-      return "Wallet Top-Up";
+      return "Lume Top-Up";
     }
     return "Paid to $safeName";
   }

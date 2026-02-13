@@ -77,6 +77,8 @@ class _RewardsViewAllSheetState extends State<RewardsViewAllSheet> {
 
     await dashboard?.refreshAllCounts();
     await dashboard?.loadUnrevealedRewardsCount();
+    await dashboard?.loadCashWon();
+
 
     /// ===== FINAL BACKEND SYNC =====
     await loadRewards();

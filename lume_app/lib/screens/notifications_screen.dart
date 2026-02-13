@@ -26,23 +26,29 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   /// ================= LOAD =================
   Future loadNotifications() async {
-    try {
-      final regId = ApiService.currentUserRegId;
-      if (regId == null) return;
+  try {
+    final regId = ApiService.currentUserRegId;
+    if (regId == null) return;
 
-     final res = await ApiService.getAllNotifications(regId);
+    final res = await ApiService.getAllNotifications(regId);
 
-      setState(() {
-        notifications = res;
-        filtered = res;
-        loading = false;
-      });
+    setState(() {
+      notifications = res;
+      filtered = res;
+      loading = false;
+    });
 
-    } catch (e) {
-      print("NOTIFICATION LOAD ERROR: $e");
-      setState(() => loading = false);
-    }
+    final dashboard =
+        context.findAncestorStateOfType<DashboardScreenState>();
+
+    await dashboard?.loadUnreadCount();
+
+  } catch (e) {
+    print("NOTIFICATION LOAD ERROR: $e");
+    setState(() => loading = false);
   }
+}
+
   // Message
   void showDashboardMessage(String msg) {
   final overlay = Overlay.of(context);
@@ -304,10 +310,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           final success =
               await ApiService.deleteNotification(n["id"]);
 
-          if (success) {
+         if (success) {
           await loadNotifications();
+          final dashboard =
+              context.findAncestorStateOfType<DashboardScreenState>();
+
+          await dashboard?.loadUnreadCount();
+          await dashboard?.loadUnrevealedRewardsCount();
+          
+
           showDashboardMessage("Notification removed");
         }
+
         },
 
         child: InkWell(
@@ -320,8 +334,66 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 await ApiService.getStudentDetails(regId);
 
             await markRead(n["id"]);
+            final dashboard =
+              context.findAncestorStateOfType<DashboardScreenState>();
+
+          await dashboard?.loadUnreadCount();
+          await dashboard?.loadUnrevealedRewardsCount();
+          
 
             if (n["type"] == "system") {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DashboardScreen(
+                  regId: regId,
+                  fullName: user["full_name"],
+                  mobile: user["mobile"],
+                  upiId: user["upi_id"],
+                  walletStatus: user["wallet_status"],
+                  aadhaarVerified: user["aadhaar_verified"],
+                  panVerified: user["pan_verified"],
+                  initialTab: "pay",
+                  openSplitId: n["ref_id"],
+                ),
+              ),
+            );
+          }
+          else if (n["type"] == "card_spend") {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DashboardScreen(
+                  regId: regId,
+                  fullName: user["full_name"],
+                  mobile: user["mobile"],
+                  upiId: user["upi_id"],
+                  walletStatus: user["wallet_status"],
+                  aadhaarVerified: user["aadhaar_verified"],
+                  panVerified: user["pan_verified"],
+                  initialTab: "card",
+                ),
+              ),
+            );
+          }
+          else if (n["type"] == "reward") {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DashboardScreen(
+                  regId: regId,
+                  fullName: user["full_name"],
+                  mobile: user["mobile"],
+                  upiId: user["upi_id"],
+                  walletStatus: user["wallet_status"],
+                  aadhaarVerified: user["aadhaar_verified"],
+                  panVerified: user["pan_verified"],
+                  initialTab: "rewards",
+                ),
+              ),
+            );
+          }
+          else if (n["type"] == "reward_earned") {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -333,12 +405,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     walletStatus: user["wallet_status"],
                     aadhaarVerified: user["aadhaar_verified"],
                     panVerified: user["pan_verified"],
-                    initialTab: "pay",
-                    openSplitId: n["ref_id"],
+                    initialTab: "rewards",
                   ),
                 ),
               );
             }
+
+
           },
 
           child: Container(

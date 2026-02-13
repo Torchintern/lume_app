@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lume_app/widgets/transaction_tile.dart';
 import 'pin_settings_screen.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import 'upi_payment_settings_screen.dart';
 import 'pin_verify_screen.dart';
@@ -77,6 +78,8 @@ class DashboardScreenState extends State<DashboardScreen>
   int currentIndex = 2;
   int unreadCount = 0;
   int unrevealedRewardsCount = 0;
+  List<dynamic> cashWonList = [];
+  Timer? _refreshTimer;
 
   bool aadhaarVerified = false;
   bool panVerified = false;
@@ -227,11 +230,13 @@ Future<void> refreshAllCounts() async {
   await Future.wait([
     loadUnreadCount(),
     loadUnrevealedRewardsCount(),
+    loadCashWon(),
   ]);
 
   if (!mounted) return;
   setState(() {});
 }
+
 
 
 Future<void> _pickImage(ImageSource source) async {
@@ -312,6 +317,7 @@ Future<void> _pickProfileImage() async {
   );
 }
 
+// Copy UPI
 void _copyUpiId(String upi) async {
   await Clipboard.setData(ClipboardData(text: upi));
 
@@ -354,6 +360,35 @@ Future<void> loadUnrevealedRewardsCount() async {
   }
 }
 
+Future<void> loadCashWon() async {
+  try {
+    final data = await ApiService.getCashWon(widget.regId);
+
+    if (!mounted) return;
+
+    setState(() {
+      cashWonList = data;
+    });
+
+  } catch (e) {
+    print("CashWon load error = $e");
+  }
+}
+
+
+void _startBackgroundRefresh() {
+  _refreshTimer?.cancel();
+
+  _refreshTimer = Timer.periodic(
+    const Duration(seconds: 30),
+    (_) async {
+      if (!mounted) return;
+
+      await refreshAllCounts();
+    },
+  );
+}
+
 
 @override
 void initState() {
@@ -380,9 +415,12 @@ void initState() {
   _pageController = PageController(initialPage: currentIndex);
   loadUnreadCount();
   loadUnrevealedRewardsCount();
+  loadCashWon();
   refreshStudentState();
   Future.delayed(const Duration(seconds: 2), () {
     loadUnrevealedRewardsCount();
+    _startBackgroundRefresh();
+
   });
 
 }
@@ -423,6 +461,7 @@ Future<void> openMyCampusApp() async {
 void dispose() {
   WidgetsBinding.instance.removeObserver(this);
   _pageController.dispose();
+  _refreshTimer?.cancel();
   super.dispose();
 }
 
@@ -448,6 +487,8 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
       _checkAndAuthenticate();
     }
     refreshAllCounts();
+    loadCashWon();
+
 
   }
 }
@@ -1056,18 +1097,27 @@ Widget build(BuildContext context) {
               Expanded(
                 child: PageView(
                   controller: _pageController,
-                  onPageChanged: (index) async {
-                      setState(() {
-                        currentIndex = index;
-                      });
+                onPageChanged: (index) async {
+                setState(() {
+                  currentIndex = index;
+                });
 
-                      await refreshStudentState();
-                      await refreshAllCounts();
+                await refreshStudentState();
+                await refreshAllCounts();
+                if (index == 3) {
+                  final rewardsView = context.findAncestorStateOfType<_RewardsViewState>();
+                  rewardsView?.loadPendingDragRewards();
+                }
+              },
 
-                    },
+
 
                   children: [
-                    const Center(child: Text("Card Coming Soon")),
+                    _CardView(
+                    regId: widget.regId,
+                    isKycCompleted: isKycCompleted,
+                    kycProgress: kycProgress,
+                  ),
 
                     _WalletView(
                       regId: widget.regId,
@@ -1702,6 +1752,7 @@ GestureDetector(
       if (payResult != null) {
       await dashboardState.refreshWalletNow();
       await dashboardState.refreshStudentState();
+      await dashboardState.refreshAllCounts();
     }
     }
   },
@@ -2661,9 +2712,16 @@ final bool isClosed =
                             final dashboard =
                                 context.findAncestorStateOfType<DashboardScreenState>();
 
-                            await dashboard?.refreshWalletNow();
+                           await dashboard?.refreshWalletNow();
                             await dashboard?.refreshStudentState();
-                            dashboard?.setState(() {});
+                            await dashboard?.loadUnreadCount();
+                            await dashboard?.loadUnrevealedRewardsCount();
+
+                            final rewardsView =
+                                context.findAncestorStateOfType<_RewardsViewState>();
+
+                            await rewardsView?.loadPendingDragRewards();
+
 
                           } catch (e) {
 
@@ -3040,7 +3098,15 @@ context.findAncestorStateOfType<DashboardScreenState>();
 await dashboard?.loadUnreadCount();
 await dashboard?.refreshWalletNow();
 await dashboard?.refreshStudentState();
-await dashboard?.loadUnrevealedRewardsCount();
+await dashboard?.refreshAllCounts();
+
+final rewardsView =
+    context.findAncestorStateOfType<_RewardsViewState>();
+
+await rewardsView?.loadPendingDragRewards();
+
+
+
   }
 
     _lastTxnId = latest["id"];
@@ -3208,7 +3274,7 @@ class _TransactionHistoryCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: const [
                 Text(
-                  "Transactions",
+                  "Wallet Transactions",
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -4138,3 +4204,1113 @@ class _DiscountTile extends StatelessWidget {
     );
   }
 }
+ // =========== CARD VIEW ===================
+class _CardView extends StatefulWidget {
+  final int regId;
+  final bool isKycCompleted;
+  final double kycProgress;
+
+  const _CardView({
+    required this.regId,
+    required this.isKycCompleted,
+    required this.kycProgress,
+  });
+
+
+  @override
+  State<_CardView> createState() => _CardViewState();
+}
+
+class _CardViewState extends State<_CardView> {
+  bool showBalance = false;
+  bool loading = true;
+  double balance = 0.0;
+  bool showFlipHint = false;
+  bool _hintShownOnce = false;
+  List<dynamic> cardTransactions = [];
+  bool loadingCardTxns = true;
+  
+  void _showCardSpendAnimation(double amount) {
+  final overlay = Overlay.of(context);
+
+  final entry = OverlayEntry(
+    builder: (_) => Positioned(
+      top: 90,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 8),
+            ],
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.credit_card, color: Colors.white),
+              const SizedBox(width: 12),
+              Text(
+                "Card spent ₹${amount.toStringAsFixed(0)}",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  overlay.insert(entry);
+
+  Future.delayed(const Duration(seconds: 2), () {
+    entry.remove();
+  });
+}
+
+  Future<void> _loadCardTransactions() async {
+  try {
+    final data = await ApiService.getCardTransactions(widget.regId);
+    if (!mounted) return;
+
+    final dashboard =
+        context.findAncestorStateOfType<DashboardScreenState>();
+
+    /// ===== FIRST LOAD SAFETY =====
+    if (cardTransactions.isEmpty && data.isNotEmpty) {
+      cardTransactions = data;
+    } else if (data.isNotEmpty) {
+
+      final latest = data.first;
+      final oldLatest =
+          cardTransactions.isNotEmpty ? cardTransactions.first : null;
+
+      final isNew =
+          oldLatest == null || latest["id"] != oldLatest["id"];
+
+     if (isNew) {
+      final double amount =
+          double.tryParse(latest["amount"].toString()) ?? 0;
+
+      _showCardSpendAnimation(amount);
+
+      /// DASHBOARD GLOBAL REFRESH
+      await dashboard?.loadUnreadCount();
+      await dashboard?.loadUnrevealedRewardsCount();
+      await dashboard?.refreshWalletNow();
+      await dashboard?.refreshStudentState();
+      final rewardsView =
+          context.findAncestorStateOfType<_RewardsViewState>();
+
+      await rewardsView?.loadPendingDragRewards();
+    }
+
+    }
+
+    setState(() {
+      cardTransactions = data;
+      loadingCardTxns = false;
+    });
+
+  } catch (_) {
+    if (!mounted) return;
+    setState(() => loadingCardTxns = false);
+  }
+}
+
+
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCardTransactions();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_hintShownOnce) {
+        triggerFlipHint();
+        _hintShownOnce = true;
+      }
+    });
+
+    _loadBalance();
+  }
+
+
+  void triggerFlipHint() {
+  setState(() {
+    showFlipHint = true;
+  });
+
+  Future.delayed(const Duration(seconds: 3), () {
+    if (!mounted) return;
+    setState(() {
+      showFlipHint = false;
+    });
+  });
+}
+
+  Future<void> _loadBalance() async {
+    try {
+      final b = await ApiService.getWalletBalance(widget.regId);
+
+      if (!mounted) return;
+      setState(() {
+        balance = b;
+        loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        balance = 0.0;
+        loading = false;
+      });
+    }
+  }
+
+  Widget _buildLockedKycCard() {
+  return GestureDetector(
+    onTap: () async {
+      final updated = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StudentDetailsScreen(
+            regId: widget.regId,
+          ),
+        ),
+      );
+
+      if (updated == true) {
+        final dashboard =
+            context.findAncestorStateOfType<DashboardScreenState>();
+        await dashboard?.refreshStudentState();
+      }
+    },
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 16),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 70,
+            width: 70,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8ECFF),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.lock_outline,
+              size: 36,
+              color: Color(0xFF4C6EF5),
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          const Text(
+            "Unlock Card Feature",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            "Complete your KYC to unlock Lume Card access",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              minHeight: 8,
+              value: widget.kycProgress,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: const AlwaysStoppedAnimation(
+                Color(0xFF4C6EF5),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            "${(widget.kycProgress * 100).toInt()}% completed",
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 22,
+              vertical: 12,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF4C6EF5),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: const Text(
+              "Complete KYC",
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        children: [
+
+        // ===== CARD BALANCE STRIP =====
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: const [
+              BoxShadow(color: Colors.black12, blurRadius: 20),
+            ],
+          ),
+          child: Row(
+            children: [
+
+              /// LEFT SIDE
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Card Balance",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+
+                  GestureDetector(
+                    onTap: () {
+                      if (loading) return;
+                      setState(() {
+                        showBalance = !showBalance;
+                      });
+                    },
+                    child: loading
+                        ? const Text(
+                            "Loading...",
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        : Text(
+                            showBalance
+                                ? "₹ ${balance.toStringAsFixed(2)}"
+                                : "₹ ••••••",
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+
+              const Spacer(),
+
+              /// RIGHT BUTTON
+              GestureDetector(
+                onTap: () {
+                  final dashboard =
+                      context.findAncestorStateOfType<DashboardScreenState>();
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AddMoneyScreen(
+                        regId: widget.regId,
+                        fullName: dashboard?.widget.fullName ?? "",
+                        mobile: dashboard?.widget.mobile ?? "",
+                        upiId: dashboard?.widget.upiId ?? "",
+                        walletStatus: dashboard?.walletStatus ?? "active",
+                        aadhaarVerified: dashboard?.widget.aadhaarVerified ?? 1,
+                        panVerified: dashboard?.widget.panVerified ?? 1,
+                      ),
+                    ),
+                  ).then((_) => _loadBalance());
+                },
+
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8ECFF),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.add,
+                        color: Color(0xFF4C6EF5),
+                        size: 18,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        "Add Money",
+                        style: TextStyle(
+                          color: Color(0xFF4C6EF5),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ===== CARD CENTER SECTION =====
+        const SizedBox(height: 8),
+
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              children: [
+
+                // Accent indicator (matches dashboard theme)
+                Container(
+                  width: 4,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4C6EF5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                const Text(
+                  "CARD CENTER",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+       const SizedBox(height: 18),
+        widget.isKycCompleted
+            ? Column(
+                children: [
+                  const _LumeVerticalFlipCard(),
+                  const SizedBox(height: 10),
+
+                  AnimatedOpacity(
+                    opacity: showFlipHint ? 1 : 0,
+                    duration: const Duration(milliseconds: 1000),
+                    child: const Text(
+                      "Tap card to flip",
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+
+                      _CardActionButton(
+                        icon: Icons.visibility_outlined,
+                        label: "View Details",
+                        onTap: () {
+                          final dashboard =
+                              context.findAncestorStateOfType<DashboardScreenState>();
+
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            isScrollControlled: true,
+                            builder: (_) => _CardDetailsBottomSheet(
+                              regId: dashboard!.widget.regId,
+                            ),
+                          );
+                        },
+
+                      ),
+
+                      _CardActionButton(
+                        icon: Icons.lock_outline,
+                        label: "Lock Card",
+                        onTap: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Lock Card feature coming soon"),
+                          ),
+                        );
+                      },
+                      ),
+
+                      _CardActionButton(
+                        icon: Icons.settings_outlined,
+                        label: "Settings",
+                        onTap: () {
+                          // TODO: Open Card Settings Screen
+                        },
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  /// ===== CARD TRANSACTIONS TILE =====
+                  _CardTransactionHistoryCard(
+                    loading: loadingCardTxns,
+                    transactions: cardTransactions,
+                    regId: widget.regId,
+                  ),
+                ],
+              )
+            : _buildLockedKycCard(),
+
+
+        ],
+      ),
+      
+    );
+  }
+}
+
+class _LumeVerticalFlipCard extends StatefulWidget {
+  const _LumeVerticalFlipCard({super.key});
+
+  @override
+  State<_LumeVerticalFlipCard> createState() => _LumeVerticalFlipCardState();
+}
+
+class _LumeVerticalFlipCardState extends State<_LumeVerticalFlipCard>
+    with SingleTickerProviderStateMixin {
+
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  bool _isFront = true;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    );
+
+    _animation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  void _flipCard() {
+    if (_isFront) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+    _isFront = !_isFront;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: GestureDetector(
+        onTap: _flipCard,
+        child: AnimatedBuilder(
+          animation: _animation,
+          builder: (context, child) {
+
+            final angle = _animation.value * 3.1416;
+            final isBack = _animation.value > 0.5;
+
+            return Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.001)
+                ..rotateY(angle),
+              child: isBack
+                  ? Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.identity()..rotateY(3.1416),
+                      child: _buildBackCard(),
+                    )
+                  : _buildFrontCard(),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ================= FRONT =================
+  Widget _buildFrontCard() {
+    return Container(
+      height: 380,
+      width: 240,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF4C6EF5),
+            Color(0xFF7A95FF),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 20,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+
+          const Icon(
+            Icons.credit_card,
+            color: Colors.white,
+            size: 28,
+          ),
+
+          const Spacer(),
+
+          const Text(
+            "LUME",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 3,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          const Text(
+            "Visa Prepaid",
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+              letterSpacing: 1,
+            ),
+          ),
+
+          const Spacer(),
+
+        ],
+      ),
+    );
+  }
+
+  // ================= BACK =================
+  Widget _buildBackCard() {
+    return Container(
+      height: 380,
+      width: 240,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B1F2A),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 20,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+
+      child: Column(
+        children: [
+
+          // Magnetic Strip
+          Container(
+            height: 50,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // CVV Strip
+          Row(
+            children: [
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                color: Colors.white,
+                child: const Text(
+                  "***",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+}
+
+class _CardActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _CardActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+
+          Container(
+            height: 56,
+            width: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8ECFF),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(
+              icon,
+              color: const Color(0xFF4C6EF5),
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CardDetailsBottomSheet extends StatefulWidget {
+  final int regId;
+
+  const _CardDetailsBottomSheet({
+    super.key,
+    required this.regId,
+  });
+
+  @override
+  State<_CardDetailsBottomSheet> createState() =>
+      _CardDetailsBottomSheetState();
+}
+
+class _CardDetailsBottomSheetState
+    extends State<_CardDetailsBottomSheet> {
+
+  bool loading = true;
+  bool showCvvOnly = false;
+  bool cardCopied = false;
+
+  String cardNumber = "";
+  String expiry = "";
+  String cvv = "";
+
+  String maskCard(String number) {
+    if (number.length < 4) return "****";
+    return "**** **** **** ${number.substring(number.length - 4)}";
+  }
+
+  String maskExpiry() => "**/**";
+  String maskCvv() => "***";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCardDetails();
+  }
+
+  Future<void> _loadCardDetails() async {
+    try {
+      final data =
+          await ApiService.getLumeCardDetails(widget.regId);
+
+      if (!mounted) return;
+
+      setState(() {
+        cardNumber = data["card_number"] ?? "";
+        final month = data["expiry_month"]?.toString() ?? "";
+        final year = data["expiry_year"]?.toString() ?? "";
+
+        expiry = "$month/$year";
+
+        cvv = data["cvv"] ?? "";
+        loading = false;
+      });
+
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+      });
+    }
+  }
+
+  void copyCardNumber() async {
+  await Clipboard.setData(ClipboardData(text: cardNumber));
+
+  setState(() {
+    cardCopied = true;
+  });
+
+  Future.delayed(const Duration(seconds: 2), () {
+    if (!mounted) return;
+    setState(() {
+      cardCopied = false;
+    });
+  });
+}
+
+
+  @override
+  Widget build(BuildContext context) {
+    final bool maskOthers = showCvvOnly;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 30),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(26),
+        ),
+      ),
+      child: loading
+          ? const SizedBox(
+              height: 200,
+              child: Center(
+                child: CircularProgressIndicator(),
+              ),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                /// Drag Handle
+                Container(
+                  width: 42,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+
+                const Text(
+                  "Card Details",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                /// CARD NUMBER
+                _detailTile(
+                  label: "Card Number",
+                  value: maskOthers
+                      ? maskCard(cardNumber)
+                      : _formatCardNumber(cardNumber),
+                  trailing: IconButton(
+                    icon: Icon(
+                      cardCopied ? Icons.check_circle : Icons.copy,
+                      size: 18,
+                      color: cardCopied ? Colors.green : Colors.black,
+                    ),
+                    onPressed: copyCardNumber,
+                  ),
+
+                ),
+
+                const SizedBox(height: 14),
+
+                /// EXPIRY
+                _detailTile(
+                  label: "Expiry",
+                  value: maskOthers
+                      ? maskExpiry()
+                      : expiry,
+                ),
+
+                const SizedBox(height: 14),
+
+                /// CVV + EYE
+                _detailTile(
+                  label: "CVV",
+                  value: maskOthers
+                      ? cvv
+                      : maskCvv(),
+                  trailing: IconButton(
+                    icon: Icon(
+                      maskOthers
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        showCvvOnly = !showCvvOnly;
+                      });
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+              ],
+            ),
+    );
+  }
+
+  String _formatCardNumber(String number) {
+    if (number.length != 16) return number;
+
+    return "${number.substring(0, 4)} "
+        "${number.substring(4, 8)} "
+        "${number.substring(8, 12)} "
+        "${number.substring(12)}";
+  }
+
+  Widget _detailTile({
+    required String label,
+    required String value,
+    Widget? trailing,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 14,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F7FB),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          if (trailing != null) trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _CardTransactionHistoryCard extends StatelessWidget {
+  final bool loading;
+  final List<dynamic> transactions;
+  final int regId;
+
+  const _CardTransactionHistoryCard({
+    required this.loading,
+    required this.transactions,
+    required this.regId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TransactionsScreen(
+              regId: regId,
+               initialTab: "card",
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 12),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+
+            /// HEADER
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Text(
+                  "Card Transactions",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      "View all",
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF4C6EF5),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: Color(0xFF4C6EF5),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            /// CONTENT
+            if (loading)
+              const Center(child: CircularProgressIndicator())
+            else if (transactions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  "No card transactions yet",
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else
+              Column(
+                children: transactions
+                    .take(5)
+                    .map<Widget>((t) => TransactionTile(
+                          txn: t,
+                          regId: regId,
+                        ))
+                    .toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

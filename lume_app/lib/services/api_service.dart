@@ -392,11 +392,16 @@ static Future<Map<String, dynamic>?> walletToWalletTransfer({
   );
 
   if (res.statusCode == 200) {
-    return jsonDecode(res.body);
+    final data = jsonDecode(res.body);
+    await refreshRewardsAfterSpend(senderRegId);
+    await getUnreadNotificationCount(senderRegId);
+
+    return data;
   }
 
   return null;
 }
+
 
 // ===================== wallet to UPI ================
 static Future<Map<String, dynamic>?> payViaUpi(
@@ -417,9 +422,15 @@ static Future<Map<String, dynamic>?> payViaUpi(
     }),
   );
 
-  if (res.statusCode == 200) {
-    return jsonDecode(res.body);
+    if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+
+    await refreshRewardsAfterSpend(senderRegId);
+    await getUnreadNotificationCount(senderRegId);
+
+    return data;
   }
+
 
   return null;
 }
@@ -929,9 +940,16 @@ static Future<Map<String, dynamic>?> paySplit({
     }),
   );
 
-  if (res.statusCode == 200) {
-    return jsonDecode(res.body);
+    if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+
+    await refreshRewardsAfterSpend(payerRegId);
+    await getUnreadNotificationCount(payerRegId);
+
+
+    return data;
   }
+
 
   return null;
 }
@@ -1010,9 +1028,18 @@ static Future<Map<String, dynamic>?> revealReward({
     }),
   );
 
-  if (res.statusCode == 200) {
-    return jsonDecode(res.body);
+    if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+    await Future.wait([
+    getCashWon(regId),
+    getPendingDragRewards(regId),
+    getUnreadNotificationCount(regId),
+  ]);
+
+
+    return data;
   }
+
 
   return null;
 }
@@ -1106,6 +1133,103 @@ static Future<List<dynamic>> getPendingDragRewards(int regId) async {
   }
 }
 
+static Future<void> refreshRewardsAfterSpend(int regId) async {
+  try {
+    await Future.wait([
+    getPendingDragRewards(regId),
+    getUnreadNotificationCount(regId),
+  ]);
+
+  } catch (_) {}
+}
+
+// ============ CARD  ==========================
+// ================= LUME CARD DETAILS =================
+static Future<Map<String, dynamic>> getLumeCard(int regId) async {
+  try {
+    final res = await http.get(
+      Uri.parse("$baseUrl/lume-card/$regId"),
+      headers: headers,
+    );
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return {
+      "card_exists": data["card_exists"] ?? false,
+      "last4": data["card"]?["card_last4"],
+      "expiry_month": data["card"]?["expiry_month"],
+      "expiry_year": data["card"]?["expiry_year"],
+      "is_locked": data["card"]?["is_locked"] ?? false,
+      "is_blocked": data["card"]?["is_blocked"] ?? false,
+    };
+
+    }
+
+    return {"card_exists": false};
+  } catch (_) {
+    return {"card_exists": false};
+  }
+}
+
+// ================= LUME CARD LOCK / UNLOCK =================
+static Future<bool> toggleLumeCardLock(int regId) async {
+  try {
+    final res = await http.post(
+      Uri.parse("$baseUrl/lume-card/lock"),
+      headers: headers,
+      body: jsonEncode({
+        "reg_id": regId,
+      }),
+    );
+
+    if (res.statusCode != 200) {
+      print("CARD LOCK FAILED: ${res.body}");
+    }
+
+    return res.statusCode == 200;
+  } catch (e) {
+    print("CARD LOCK ERROR: $e");
+    return false;
+  }
+}
+
+// ================= LUME CARD DETAILS =================
+static Future<Map<String, dynamic>> getLumeCardDetails(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/card/details/$regId"),
+    headers: headers,
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  throw Exception("FAILED_TO_FETCH_CARD_DETAILS");
+}
+
+// ============ get Card transactions ===============
+static Future<List<dynamic>> getCardTransactions(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/card/transactions/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+  return [];
+}
+
+// For refresh Purpose
+static Future<void> refreshAllRewardsData(int regId) async {
+  try {
+    await Future.wait([
+      getPendingDragRewards(regId),
+      getCashWon(regId),
+      getCoupons(regId),
+      getVouchers(regId),
+    ]);
+  } catch (_) {}
+}
 
 
 }

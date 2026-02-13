@@ -4,11 +4,14 @@ import '../widgets/transaction_tile.dart';
 
 class TransactionsScreen extends StatefulWidget {
   final int regId;
+  final String initialTab;  
 
   const TransactionsScreen({
     super.key,
     required this.regId,
+    this.initialTab = "wallet",  
   });
+
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -18,8 +21,10 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  List<dynamic> allTransactions = [];
   List<dynamic> filteredTransactions = [];
+  List<dynamic> walletTransactions = [];
+  List<dynamic> cardTransactions = [];
+
   bool loading = true;
   // ================= SEARCH STATE =================
   final TextEditingController _walletSearchController =
@@ -39,28 +44,59 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+        if (widget.initialTab == "card") {
+    _tabController.index = 1;
+  } else {
+    _tabController.index = 0;
+  }
     _loadTransactions();
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) return;
+
+      setState(() {
+        filteredTransactions =
+            _tabController.index == 0
+                ? walletTransactions
+                : cardTransactions;
+      });
+    });
   }
 
-  Future<void> _loadTransactions() async {
-    try {
-      final data =
-          await ApiService.getTransactionHistory(widget.regId);
-      if (!mounted) return;
-      setState(() {
-        allTransactions = data;
-        filteredTransactions = data;
-        loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        allTransactions = [];
-        filteredTransactions = [];
-        loading = false;
-      });
-    }
+Future<void> _loadTransactions() async {
+  try {
+    final walletData =
+        await ApiService.getTransactionHistory(widget.regId);
+
+    final cardData =
+        await ApiService.getCardTransactions(widget.regId);
+
+    if (!mounted) return;
+
+    setState(() {
+      walletTransactions = walletData;
+      cardTransactions = cardData;
+
+      filteredTransactions =
+    widget.initialTab == "card"
+        ? cardData
+        : walletData;
+ 
+      loading = false;
+    });
+
+  } catch (_) {
+    if (!mounted) return;
+
+    setState(() {
+      walletTransactions = [];
+      cardTransactions = [];
+      filteredTransactions = [];
+      loading = false;
+    });
   }
+}
+
+
 
   @override
   void dispose() {
@@ -112,8 +148,12 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   // ================= FILTER LOGIC =================
- void _applyFilters({bool isWallet = true}) {
-  List<dynamic> temp = List.from(allTransactions);
+void _applyFilters({bool isWallet = true}) {
+  List<dynamic> temp = List.from(
+    isWallet ? walletTransactions : cardTransactions
+  );
+
+
 
   // ===== DATE FILTER (DAY LEVEL) =====
   if (fromMonth != null && toMonth != null) {
@@ -276,7 +316,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             Expanded(
                 child: loading
                     ? const Center(child: CircularProgressIndicator())
-                    : filteredTransactions.isEmpty
+                    : walletTransactions.isEmpty
                         ? const Center(
                             child: Text(
                               "No transactions found",
@@ -291,6 +331,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           Column(
           children: [
             _filterHeader(),
+
             _searchBar(
               controller: _cardSearchController,
               onChanged: (v) {
@@ -298,27 +339,22 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                 _applyFilters(isWallet: false);
               },
             ),
-            const Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.credit_card,
-                          size: 48, color: Colors.grey),
-                      SizedBox(height: 12),
-                      Text(
-                        "Coming Soon",
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+
+            Expanded(
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : cardTransactions.isEmpty
+                      ? const Center(
+                          child: Text(
+                            "No transactions done",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      : _buildTransactionList(),
+            ),
+          ],
+        )
+
         ],
       ),
     );

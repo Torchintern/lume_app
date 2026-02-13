@@ -9,6 +9,8 @@ from datetime import datetime
 import math
 import traceback
 from reward_engine import generate_reward
+import random
+from dateutil.relativedelta import relativedelta
 
 
 def hash_pin(pin: str) -> str:
@@ -514,6 +516,14 @@ def pan_kyc():
             pan_masked,
             d["registered_student_id"]
         ))
+        
+        # AUTO CREATE CARD AFTER KYC 100%
+        create_card_for_user(
+            d["registered_student_id"],
+            conn,
+            c
+        )
+
 
         conn.commit()
 
@@ -842,6 +852,35 @@ def wallet_to_wallet_transfer():
             amount,
             reward["tier"]
         )
+        # ===== REWARD EARNED NOTIFICATION (DEDUP SAFE) =====
+        c.execute("""
+        SELECT id FROM notifications
+        WHERE reg_id=%s AND ref_id=%s AND type='reward_earned'
+        LIMIT 1
+        """,(sender_reg_id, txn_id))
+
+        if not c.fetchone():
+
+            c.execute("""
+            INSERT INTO notifications (
+                reg_id,
+                title,
+                message,
+                type,
+                amount,
+                ref_id,
+                is_read
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,0)
+            """, (
+                sender_reg_id,
+                "Reward Earned 🎉",
+                "You earned a reward. Reveal now!",
+                "reward_earned",
+                amount,
+                txn_id
+            ))
+
 
 
         conn.commit()
@@ -1016,6 +1055,35 @@ def wallet_to_upi_payment():
             amount,
             reward["tier"]
         )
+       # ===== REWARD EARNED NOTIFICATION (DEDUP SAFE) =====
+        c.execute("""
+        SELECT id FROM notifications
+        WHERE reg_id=%s AND ref_id=%s AND type='reward_earned'
+        LIMIT 1
+        """,(sender_id, txn_id))
+
+        if not c.fetchone():
+
+            c.execute("""
+            INSERT INTO notifications (
+                reg_id,
+                title,
+                message,
+                type,
+                amount,
+                ref_id,
+                is_read
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,0)
+            """, (
+                sender_id,
+                "Reward Earned 🎉",
+                "You earned a reward. Reveal now!",
+                "reward_earned",
+                amount,
+                txn_id
+            ))
+
 
     
 
@@ -1269,6 +1337,78 @@ def _log_txn(
         txn_type,
         payment_method
     ))
+
+def _log_card_txn(
+    c,
+    reg_id,
+    card_id,
+    amount,
+    merchant_name,
+    txn_type,
+    status
+):
+    c.execute("""
+        INSERT INTO card_transactions (
+            reg_id,
+            card_id,
+            amount,
+            merchant_name,
+            txn_type,
+            status
+        )
+        VALUES (%s,%s,%s,%s,%s,%s)
+    """, (
+        reg_id,
+        card_id,
+        float(amount),
+        merchant_name,
+        txn_type,
+        status
+    ))
+
+    txn_id = c.lastrowid
+
+    # ===== REWARD ONLY IF SPEND =====
+    if status == "success" and txn_type == "spend":
+        create_card_spend_reward(
+            None,
+            c,
+            reg_id,
+            txn_id,
+            amount,
+            merchant_name
+        )
+
+    # ===== SPEND NOTIFICATION ONLY ON SUCCESS (WITH DUPLICATE PROTECTION) =====
+    if status == "success" and txn_type == "spend":
+        c.execute("""
+        SELECT id FROM notifications
+        WHERE reg_id=%s AND ref_id=%s AND type='card_spend'
+        LIMIT 1
+        """, (reg_id, txn_id))
+
+        exists = c.fetchone()
+
+        if not exists:
+            c.execute("""
+            INSERT INTO notifications (
+                reg_id,
+                title,
+                message,
+                type,
+                amount,
+                ref_id,
+                is_read
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,0)
+            """, (
+                reg_id,
+                "Payment Successful",
+                f"₹{float(amount):.2f} spent at {merchant_name}",
+                "card_spend",
+                float(amount),
+                txn_id
+            ))
 
 
 # ================= TRANSACTION HISTORY =================
@@ -2078,12 +2218,26 @@ def verify_add_money():
             SET status='success', failure_reason=NULL
             WHERE id=%s
         """, (txn_id,))
-        update_user_points_and_tier(
-            conn,
+        
+        # Get user's lume card id
+        c.execute("""
+            SELECT id
+            FROM lume_cards
+            WHERE reg_id=%s
+        """, (txn["sender_reg_id"],))
+
+        card_row = c.fetchone()
+        card_id = card_row["id"] if card_row else None
+
+        # Log card txn
+        _log_card_txn(
             c,
             txn["sender_reg_id"],
+            card_id,
             txn["amount"],
-            is_spend=False
+            "Wallet Topup",
+            "wallet_topup",
+            "success"
         )
 
         #  Save card ONLY if checkbox selected
@@ -2764,6 +2918,10 @@ def pay_split():
         """, (d["split_member_id"],))
 
         sm = c.fetchone()
+
+        if not sm:
+            return {"message": "SPLIT_NOT_FOUND"}, 404
+
         # ===== BLOCK IF SPLIT CLOSED =====
         c.execute("""
         SELECT IFNULL(closed,0) as closed
@@ -2775,10 +2933,6 @@ def pay_split():
 
         if closed_row and closed_row["closed"] == 1:
             return {"message": "SPLIT_ALREADY_CLOSED"}, 400
-
-
-        if not sm:
-            return {"message": "SPLIT_NOT_FOUND"}, 404
 
         note = sm.get("note")
         creator_name = sm.get("creator_name")
@@ -2911,14 +3065,17 @@ def pay_split():
             "wallet",
             split_display_name
         )
+
         txn_id = c.lastrowid
+
         # ===== REWARDS UPDATE =====
         reward = update_user_points_and_tier(
-                conn,
-                c,
-                d["payer_reg_id"],
-                amount
-            )
+            conn,
+            c,
+            d["payer_reg_id"],
+            amount
+        )
+
         token = generate_reward(
             c,
             d["payer_reg_id"],
@@ -2927,6 +3084,34 @@ def pay_split():
             reward["tier"]
         )
 
+        # ===== REWARD EARNED NOTIFICATION (DEDUP SAFE) =====
+        c.execute("""
+        SELECT id FROM notifications
+        WHERE reg_id=%s AND ref_id=%s AND type='reward_earned'
+        LIMIT 1
+        """, (d["payer_reg_id"], txn_id))
+
+        if not c.fetchone():
+
+            c.execute("""
+            INSERT INTO notifications (
+                reg_id,
+                title,
+                message,
+                type,
+                amount,
+                ref_id,
+                is_read
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,0)
+            """, (
+                d["payer_reg_id"],
+                "Reward Earned 🎉",
+                "You earned a reward. Reveal now!",
+                "reward_earned",
+                amount,
+                txn_id
+            ))
 
         conn.commit()
 
@@ -2942,8 +3127,6 @@ def pay_split():
             "reward_token": token
         }, 200
 
-
-    # ===== EXCEPTION =====
     except Exception as e:
         conn.rollback()
 
@@ -2974,12 +3157,9 @@ def pay_split():
 
         return {"message": "SPLIT_PAYMENT_FAILED"}, 500
 
-
-    # ===== FINALLY =====
     finally:
         c.close()
         conn.close()
-        
 
 # ======== Close Split ===========
 @app.route("/api/split/close", methods=["POST"])
@@ -3385,6 +3565,248 @@ def get_pending_drag_rewards(reg_id):
         c.close()
         conn.close()
 
+# ========== CARD ================
+
+# ==== Helpers ======
+def generate_card_number():
+    prefix = "4"
+    remaining = "".join(str(random.randint(0,9)) for _ in range(15))
+    return prefix + remaining
+
+def generate_cvv():
+    return str(random.randint(100,999))
+
+def mask_card(card_number):
+    return "**** **** **** " + card_number[-4:]
+
+def calculate_card_cashback(amount, merchant_name):
+
+    name = (merchant_name or "").lower()
+
+    # CATEGORY DETECTION
+    if any(k in name for k in ["amazon","flipkart","myntra","shopping"]):
+        percent = 0.01
+
+    elif any(k in name for k in ["zomato","swiggy","food","restaurant","cafe"]):
+        percent = 0.01
+
+    elif any(k in name for k in ["college","university","tuition","fee","education"]):
+        percent = 0.05
+
+    elif any(k in name for k in ["bookmyshow","pvr","inox","movie","cinema"]):
+        percent = 0.02
+
+    else:
+        percent = 0.005
+
+    return round(float(amount) * percent, 2)
+
+
+def create_card_spend_reward(conn, c, reg_id, txn_id, amount, merchant_name):
+
+    cashback = calculate_card_cashback(amount, merchant_name)
+
+    if cashback <= 0:
+        return None
+
+    token = generate_reward(
+        c,
+        reg_id,
+        txn_id,
+        cashback,
+        "card_spend"
+    )
+
+    # ===== REWARD EARNED NOTIFICATION =====
+    c.execute("""
+    SELECT id FROM notifications
+    WHERE reg_id=%s AND ref_id=%s AND type='reward_earned'
+    LIMIT 1
+    """,(reg_id, txn_id))
+
+    if not c.fetchone():
+
+        c.execute("""
+        INSERT INTO notifications (
+            reg_id,
+            title,
+            message,
+            type,
+            amount,
+            ref_id,
+            is_read
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,0)
+        """, (
+            reg_id,
+            "Reward Earned 🎉",
+            f"You earned ₹{cashback:.2f} cashback. Reveal now!",
+            "reward_earned",
+            cashback,
+            txn_id
+        ))
+
+
+    return token
+
+
+# ==== Card Details =========
+def create_card_for_user(reg_id, conn, c):
+
+    # Check if card already exists
+    c.execute("""
+        SELECT id FROM lume_cards
+        WHERE reg_id=%s
+    """, (reg_id,))
+
+    if c.fetchone():
+        return
+
+    # Generate data
+    card_number = generate_card_number()
+    cvv = generate_cvv()
+
+    # Temporary expiry (3 years default)
+    expiry_date = datetime.now() + relativedelta(years=3)
+
+    c.execute("""
+        INSERT INTO lume_cards (
+            reg_id,
+            card_number,
+            card_last4,
+            expiry_month,
+            expiry_year,
+            cvv,
+            card_status
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,'active')
+    """, (
+        reg_id,
+        card_number,
+        card_number[-4:],
+        expiry_date.month,
+        expiry_date.year,
+        cvv
+    ))
+
+# =========== Get Lume Card ================
+@app.route("/api/lume-card/<int:reg_id>", methods=["GET"])
+def get_lume_card(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT
+            card_last4,
+            expiry_month,
+            expiry_year,
+            card_status,
+            is_locked,
+            is_blocked,
+            daily_limit,
+            monthly_limit
+        FROM lume_cards
+        WHERE reg_id=%s
+    """, (reg_id,))
+
+    card = c.fetchone()
+
+    c.close()
+    conn.close()
+
+    if not card:
+        return {"card_exists": False}
+
+    return {
+        "card_exists": True,
+        "card": card
+    }
+ # ==== LOCK CARD ======
+@app.route("/api/lume-card/lock", methods=["POST"])
+def lock_card():
+    d = request.json
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        UPDATE lume_cards
+        SET is_locked = NOT is_locked
+        WHERE reg_id=%s
+    """, (d["reg_id"],))
+
+    conn.commit()
+    return {"message": "UPDATED"}
+# ==== Get Card Details ========
+@app.route("/api/card/details/<int:reg_id>", methods=["GET"])
+def get_card_details(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT
+                card_number,
+                expiry_month,
+                expiry_year,
+                cvv
+            FROM lume_cards
+            WHERE reg_id=%s
+        """, (reg_id,))
+
+        card = c.fetchone()
+
+        if not card:
+            return {"message": "CARD_NOT_FOUND"}, 404
+
+        return card, 200
+
+    except Exception as e:
+        print("CARD DETAILS ERROR:", e)
+        return {"message": "SERVER_ERROR"}, 500
+
+    finally:
+        c.close()
+        conn.close()
+        
+# ======= Get Card Transactions =========
+@app.route("/api/card/transactions/<int:reg_id>", methods=["GET"])
+def get_card_transactions(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT
+                id,
+                amount,
+                merchant_name,
+                txn_type,
+                status,
+                created_at
+            FROM card_transactions
+            WHERE reg_id=%s
+            ORDER BY created_at DESC
+        """, (reg_id,))
+
+        rows = c.fetchall()
+
+        for r in rows:
+            if r["created_at"]:
+                r["created_at"] = r["created_at"].isoformat()
+
+        return rows, 200
+
+    except Exception as e:
+        print("CARD TXN ERROR:", e)
+        return [], 200
+
+    finally:
+        c.close()
+        conn.close()
 
 #========================= RUN=========================
 """if __name__ == "__main__":
