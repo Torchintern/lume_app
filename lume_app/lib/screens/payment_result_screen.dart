@@ -11,7 +11,7 @@ class PaymentResultScreen extends StatefulWidget {
   final String status;
   final String payeeName;
   final String payee;
-  final bool isWallet;
+  final String paymentType;
   final int regId;
   final String direction;
   final String? createdAt;
@@ -35,7 +35,7 @@ class PaymentResultScreen extends StatefulWidget {
     required this.status,
     required this.payeeName,
     required this.payee,
-    required this.isWallet,
+    required this.paymentType,
     required this.regId,
     required this.fullName,
     required this.mobile,
@@ -153,13 +153,14 @@ class _PaymentResultScreenState extends State<PaymentResultScreen> {
   }
 
   // ================= PAYMENT TYPE =================
-  bool get _effectiveIsWallet =>
-      widget.isWallet && !widget.payee.contains("@");
+  String get paymentTypeText => widget.paymentType;
 
-  String get paymentTypeText =>
-      widget.paymentMethod ?? (_effectiveIsWallet ? "Wallet" : "UPI");
+String get _idLabel {
+  if (widget.paymentType == "Wallet") return "Mobile";
+  if (widget.paymentType == "Card") return "Card";
+  return "UPI";
+}
 
-  String get _idLabel => _effectiveIsWallet ? "Mobile" : "UPI";
 
   // ================= SHARE =================
   void _sharePayment() {

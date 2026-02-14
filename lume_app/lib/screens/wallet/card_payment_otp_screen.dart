@@ -91,6 +91,7 @@ class _CardPaymentOtpScreenState extends State<CardPaymentOtpScreen> {
         otp: otpController.text.trim(),
         saveCard: widget.saveCard,
         cardData: widget.cardData,
+        regId: widget.regId,
       ).timeout(const Duration(seconds: 20));
 
       if (result == "success" || result == true) {

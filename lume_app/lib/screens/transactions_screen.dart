@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/transaction_tile.dart';
+import '../widgets/card_transaction_tile.dart';
 
 class TransactionsScreen extends StatefulWidget {
   final int regId;
@@ -40,47 +41,58 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   DateTime? toMonth;
   String statusFilter = 'All';
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-        if (widget.initialTab == "card") {
+ @override
+void initState() {
+  super.initState();
+
+  _tabController = TabController(length: 2, vsync: this);
+
+  if (widget.initialTab == "card") {
     _tabController.index = 1;
+    _loadCardTransactions();
   } else {
     _tabController.index = 0;
-  }
-    _loadTransactions();
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) return;
-
-      setState(() {
-        filteredTransactions =
-            _tabController.index == 0
-                ? walletTransactions
-                : cardTransactions;
-      });
-    });
+    _loadWalletTransactions();
   }
 
-Future<void> _loadTransactions() async {
+ _tabController.addListener(() {
+  if (_tabController.index != _tabController.previousIndex) {
+
+    // Reset filters when switching
+    fromMonth = null;
+    toMonth = null;
+    statusFilter = "All";
+
+    _walletSearchController.clear();
+    _cardSearchController.clear();
+
+    walletSearchQuery = "";
+    cardSearchQuery = "";
+
+    if (_tabController.index == 0) {
+      _loadWalletTransactions();
+    } else {
+      _loadCardTransactions();
+    }
+  }
+});
+
+}
+
+
+
+Future<void> _loadWalletTransactions() async {
+  setState(() => loading = true);
+
   try {
-    final walletData =
+    final data =
         await ApiService.getTransactionHistory(widget.regId);
-
-    final cardData =
-        await ApiService.getCardTransactions(widget.regId);
 
     if (!mounted) return;
 
     setState(() {
-      walletTransactions = walletData;
-      cardTransactions = cardData;
-
-      filteredTransactions =
-    widget.initialTab == "card"
-        ? cardData
-        : walletData;
- 
+      walletTransactions = data;
+      filteredTransactions = data;
       loading = false;
     });
 
@@ -89,12 +101,38 @@ Future<void> _loadTransactions() async {
 
     setState(() {
       walletTransactions = [];
+      filteredTransactions = [];
+      loading = false;
+    });
+  }
+}
+
+Future<void> _loadCardTransactions() async {
+  setState(() => loading = true);
+
+  try {
+    final data =
+        await ApiService.getCardTransactions(widget.regId);
+
+    if (!mounted) return;
+
+    setState(() {
+      cardTransactions = data;
+      filteredTransactions = data;
+      loading = false;
+    });
+
+  } catch (_) {
+    if (!mounted) return;
+
+    setState(() {
       cardTransactions = [];
       filteredTransactions = [];
       loading = false;
     });
   }
 }
+
 
 
 
@@ -149,11 +187,9 @@ Future<void> _loadTransactions() async {
 
   // ================= FILTER LOGIC =================
 void _applyFilters({bool isWallet = true}) {
-  List<dynamic> temp = List.from(
-    isWallet ? walletTransactions : cardTransactions
-  );
-
-
+List<dynamic> temp = List.from(
+      isWallet ? walletTransactions : cardTransactions
+    );
 
   // ===== DATE FILTER (DAY LEVEL) =====
   if (fromMonth != null && toMonth != null) {
@@ -316,7 +352,7 @@ void _applyFilters({bool isWallet = true}) {
             Expanded(
                 child: loading
                     ? const Center(child: CircularProgressIndicator())
-                    : walletTransactions.isEmpty
+                    : filteredTransactions.isEmpty
                         ? const Center(
                             child: Text(
                               "No transactions found",
@@ -343,15 +379,16 @@ void _applyFilters({bool isWallet = true}) {
             Expanded(
               child: loading
                   ? const Center(child: CircularProgressIndicator())
-                  : cardTransactions.isEmpty
+                  : filteredTransactions.isEmpty
                       ? const Center(
                           child: Text(
-                            "No transactions done",
+                            "No transactions Found",
                             style: TextStyle(color: Colors.grey),
                           ),
                         )
                       : _buildTransactionList(),
             ),
+
           ],
         )
 
@@ -384,14 +421,19 @@ void _applyFilters({bool isWallet = true}) {
               ),
             ),
             ...entry.value.map(
-              (txn) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: TransactionTile(
-                  txn: txn,
-                  regId: widget.regId, 
-                ),
-              ),
+            (txn) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _tabController.index == 1
+                  ? CardTransactionTile(
+                      txn: txn,
+                    )
+                  : TransactionTile(
+                      txn: txn,
+                      regId: widget.regId,
+                    ),
             ),
+          ),
+
           ],
         );
       }).toList(),
@@ -456,14 +498,68 @@ void _applyFilters({bool isWallet = true}) {
                     },
                   ),
                   const SizedBox(height: 24),
-                  _applyButton(() {
-                    setState(() {
-                      fromMonth = tempFrom;
-                      toMonth = tempTo;
-                    });
-                    _applyFilters();
-                    Navigator.pop(context);
-                  }),
+                  Row(
+                  children: [
+
+                    /// CLEAR BUTTON
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            fromMonth = null;
+                            toMonth = null;
+                          });
+
+                          _applyFilters(
+                            isWallet: _tabController.index == 0,
+                          );
+
+                          Navigator.pop(context);
+                        },
+                        child: const Text("Clear"),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    /// APPLY BUTTON
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            fromMonth = tempFrom;
+                            toMonth = tempTo;
+                          });
+
+                          _applyFilters(
+                            isWallet: _tabController.index == 0,
+                          );
+
+                          Navigator.pop(context);
+                        },
+                        child: const Text(
+                          "Apply",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
                 ],
               ),
             );
@@ -527,37 +623,72 @@ void _applyFilters({bool isWallet = true}) {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  _applyButton(() {
-                    setState(() => statusFilter = tempStatus);
-                    _applyFilters();
-                    Navigator.pop(context);
-                  }),
+                  Row(
+                  children: [
+
+                    /// CLEAR BUTTON
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            statusFilter = "All";
+                          });
+
+                          _applyFilters(
+                            isWallet: _tabController.index == 0,
+                          );
+
+                          Navigator.pop(context);
+                        },
+                        child: const Text("Clear"),
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    /// APPLY BUTTON
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            statusFilter = tempStatus;
+                          });
+
+                          _applyFilters(
+                            isWallet: _tabController.index == 0,
+                          );
+
+                          Navigator.pop(context);
+                        },
+                        child: const Text(
+                          "Apply",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
                 ],
               ),
             );
           },
         );
       },
-    );
-  }
-
-  Widget _applyButton(VoidCallback onTap) {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24)),
-        ),
-        onPressed: onTap,
-        child: const Text(
-          "Apply",
-          style:
-              TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-      ),
     );
   }
 

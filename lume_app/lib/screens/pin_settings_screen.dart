@@ -7,11 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 class PinSettingsScreen extends StatefulWidget {
   final int regId;
   final bool forceSetup;
+  final String initialTab; 
 
   const PinSettingsScreen({
     super.key,
     required this.regId,
     this.forceSetup = false,
+    this.initialTab = "wallet",
   });
 
   @override
@@ -21,7 +23,7 @@ class PinSettingsScreen extends StatefulWidget {
 class _PinSettingsScreenState extends State<PinSettingsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
+  
   bool walletHasPin = false;
   bool cardHasPin = false;
 
@@ -33,7 +35,11 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+   _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab == "card" ? 1 : 0,
+    );
     _loadPinStatus();
   }
 
@@ -44,9 +50,9 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
       if (!mounted) return;
 
       setState(() {
-        walletHasPin = status["wallet"] == true;
-        cardHasPin = status["card"] == true;
-        loading = false;
+      walletHasPin = status["wallet_pin_set"] == true;
+      cardHasPin = status["card_pin_set"] == true;
+      loading = false;
       });
     } catch (_) {
       if (!mounted) return;

@@ -38,7 +38,7 @@ import 'payment_result_screen.dart';
 import 'package:lume_app/screens/rewards/cash_won_screen.dart';
 import 'package:lume_app/screens/rewards/coupons_screen.dart';
 import 'rewards/rewards_view_all_sheet.dart';
-
+import '../widgets/card_transaction_tile.dart';
 class DashboardScreen extends StatefulWidget {
   final int regId;
   final String fullName;
@@ -516,6 +516,7 @@ Future<void> openWalletPinFlow() async {
         fullscreenDialog: true,
         builder: (_) => PinSettingsScreen(
           regId: widget.regId,
+          initialTab: "wallet",
           forceSetup: true,
         ),
       ),
@@ -904,7 +905,7 @@ Widget build(BuildContext context) {
                 ListTile(
                   leading: const Icon(Icons.help_outline),
                   title: const Text("Support"),
-                  subtitle: const Text("Customer Support"),
+                  subtitle: const Text("Student Support"),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {    
                   },
@@ -1109,8 +1110,6 @@ Widget build(BuildContext context) {
                   rewardsView?.loadPendingDragRewards();
                 }
               },
-
-
 
                   children: [
                     _CardView(
@@ -2690,8 +2689,7 @@ final bool isClosed =
                                 note: split["note"],
                                 paymentMethod: "Wallet",
                                 txnTime: DateTime.now(),
-
-                                isWallet: true,
+                                paymentType: "Wallet",
                                 regId: widget.regId,
                                 fullName: dashboardState?.widget.fullName ?? "",
                                 mobile: dashboardState?.widget.mobile ?? "",
@@ -2733,7 +2731,7 @@ final bool isClosed =
                                   status: "failed",
                                   payeeName: split["creator_name"] ?? "",
                                   payee: split["creator_mobile"] ?? "",
-                                  isWallet: true,
+                                  paymentType: "Wallet",
                                   regId: widget.regId,
                                   fullName: dashboardState?.widget.fullName ?? "",
                                   mobile: dashboardState?.widget.mobile ?? "",
@@ -3012,6 +3010,7 @@ class _WalletViewState extends State<_WalletView> {
   void initState() {
     super.initState();
     _loadTransactions();
+    
   }
  void refreshAll() async {
   await _loadTransactions();
@@ -3095,10 +3094,11 @@ void showReceivedAnimation(double amount) {
     final dashboard =
 context.findAncestorStateOfType<DashboardScreenState>();
 
-await dashboard?.loadUnreadCount();
-await dashboard?.refreshWalletNow();
-await dashboard?.refreshStudentState();
-await dashboard?.refreshAllCounts();
+await Future.wait([
+  dashboard?.refreshWalletNow() ?? Future.value(),
+  dashboard?.refreshAllCounts() ?? Future.value(),
+]);
+
 
 final rewardsView =
     context.findAncestorStateOfType<_RewardsViewState>();
@@ -3141,6 +3141,114 @@ Widget build(BuildContext context) {
           walletStatus: widget.walletStatus,
         ),
 
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: const [
+              BoxShadow(color: Colors.black12, blurRadius: 16),
+            ],
+          ),
+          child: Row(
+            children: [
+
+              /// Icon
+              Container(
+                height: 48,
+                width: 48,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8ECFF),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.lock_outline,
+                  color: widget.walletStatus == "active"
+                      ? const Color(0xFF4C6EF5)
+                      : Colors.grey,
+                ),
+              ),
+
+              const SizedBox(width: 16),
+
+              /// Title + Subtitle
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+
+                    const Text(
+                      "Wallet PIN",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      widget.walletStatus != "active"
+                          ? "Activate wallet to set PIN"
+                          : "Manage your wallet security PIN",
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              /// Action Button
+              GestureDetector(
+                onTap: widget.walletStatus == "active"
+                    ? () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PinSettingsScreen(
+                              regId: widget.regId,
+                              initialTab: "wallet",
+                            ),
+                          ),
+                        );
+
+                        if (result == true && mounted) {
+                          final dashboardState =
+                              context.findAncestorStateOfType<DashboardScreenState>();
+                          dashboardState?.setState(() {
+                            dashboardState.currentIndex = 1;
+                          });
+                        }
+                      }
+                    : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: widget.walletStatus == "active"
+                        ? const Color(0xFF4C6EF5)
+                        : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "Manage",
+                    style: TextStyle(
+                      color: widget.walletStatus == "active"
+                          ? Colors.white
+                          : Colors.grey,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
 
         _TransactionHistoryCard(
@@ -3149,84 +3257,6 @@ Widget build(BuildContext context) {
           regId: widget.regId,
         ),
 
-        const SizedBox(height: 16),
-
-        GestureDetector(
-          onTap: widget.walletStatus == "active"
-              ? () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PinSettingsScreen(
-                        regId: widget.regId,
-                      ),
-                    ),
-                  );
-
-                  if (result == true && mounted) {
-                    final dashboardState =
-                        context.findAncestorStateOfType<DashboardScreenState>();
-                    dashboardState?.setState(() {
-                      dashboardState.currentIndex = 1;
-                    });
-                  }
-                }
-              : null,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(color: Colors.black12, blurRadius: 8),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  widget.walletStatus == "active"
-                      ? Icons.lock_open
-                      : Icons.lock_outline,
-                  color: widget.walletStatus == "active"
-                      ? const Color(0xFF4C6EF5)
-                      : Colors.grey,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Wallet PIN",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: widget.walletStatus == "active"
-                              ? Colors.black
-                              : Colors.grey,
-                        ),
-                      ),
-                      if (widget.walletStatus != "active")
-                        const Text(
-                          "Activate wallet to set PIN",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right,
-                  color: widget.walletStatus == "active"
-                      ? Colors.black
-                      : Colors.grey,
-                ),
-              ],
-            ),
-          ),
-        ),
       ],
     ),
   );
@@ -4229,7 +4259,346 @@ class _CardViewState extends State<_CardView> {
   bool _hintShownOnce = false;
   List<dynamic> cardTransactions = [];
   bool loadingCardTxns = true;
-  
+  bool isCardLocked = false;
+  bool loadingLockState = true;
+  String cardLast4 = "";
+
+  void _showLockBottomSheet() {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 30),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(26),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+
+            /// Drag indicator
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            /// Icon container (Dashboard style)
+            Container(
+              height: 70,
+              width: 70,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                isCardLocked
+                    ? Icons.lock_open_rounded
+                    : Icons.lock_outline_rounded,
+                size: 36,
+                color: const Color(0xFF4C6EF5),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            Text(
+              isCardLocked ? "Unlock Card?" : "Lock Card?",
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            Text(
+              isCardLocked
+                  ? "Your card will be enabled for ATM, POS and online transactions."
+                  : "Your card will be temporarily disabled for ATM, POS and online transactions.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                height: 1.4,
+                fontSize: 14,
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            /// Primary Button
+            SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: () async {
+
+                Navigator.pop(context); // close confirm sheet
+
+                try {
+
+                  // ===== TOGGLE LOCK =====
+                  final locked =
+                      await ApiService.toggleCardLock(widget.regId);
+
+                  // ===== GET LAST 4 DIGITS =====
+                  final last4 =
+                      await ApiService.getCardLast4(widget.regId);
+
+                  if (!mounted) return;
+
+                  // ===== UPDATE LOCAL STATE =====
+                  setState(() {
+                    isCardLocked = locked;
+                  });
+
+                  // ===== REFRESH DASHBOARD NOTIFICATION COUNT =====
+                  final dashboard =
+                      context.findAncestorStateOfType<DashboardScreenState>();
+
+                  await dashboard?.loadUnreadCount();
+
+                  // ===== SHOW FLOATING SECURITY ALERT =====
+                  _showCardSecurityFloating(locked);
+
+                  // ===== SHOW SUCCESS SHEET =====
+                  if (last4 != null) {
+                    _showLockSuccessSheet(
+                      locked: locked,
+                      cardLast4: last4,
+                    );
+                  }
+
+                } catch (e) {
+
+                  if (!mounted) return;
+                  showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) {
+                      return Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(26),
+                          ),
+                        ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.error_outline,
+                                size: 48,
+                                color: Colors.red),
+                            SizedBox(height: 12),
+                            Text(
+                              "Unable to update card status.\nPlease try again.",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4C6EF5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: Text(
+                isCardLocked ? "Yes, Unlock" : "Yes, Lock",
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+
+
+            const SizedBox(height: 12),
+
+            /// Secondary Button (Dashboard style)
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  backgroundColor: const Color(0xFFE8ECFF),
+                  foregroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text(
+                  "Cancel",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+
+          ],
+        ),
+      );
+    },
+  );
+}
+
+void _showCardSecurityFloating(bool locked) {
+  final overlay = Overlay.of(context);
+
+  final entry = OverlayEntry(
+    builder: (_) => Positioned(
+      top: 100,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 8),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                locked ? Icons.lock : Icons.lock_open,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  locked
+                      ? "Your card has been locked"
+                      : "Your card has been unlocked",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  overlay.insert(entry);
+
+  Future.delayed(const Duration(seconds: 3), () {
+    entry.remove();
+  });
+}
+
+
+void _showLockSuccessSheet({
+  required bool locked,
+  required String cardLast4,
+}) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isDismissible: false,
+    enableDrag: false,
+    builder: (_) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 30, 24, 34),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(26),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            Container(
+              height: 72,
+              width: 72,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFF4C6EF5),
+              ),
+              child: const Icon(
+                Icons.check_rounded,
+                color: Colors.white,
+                size: 36,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            Text(
+              "XXXX $cardLast4 is now ${locked ? "locked" : "unlocked"}!",
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+            Text(
+              locked
+                  ? "Your card is temporarily disabled."
+                  : "Your card is now active for transactions.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  Future.delayed(const Duration(seconds: 3), () {
+    if (mounted) Navigator.pop(context);
+  });
+}
+
+
+
+
   void _showCardSpendAnimation(double amount) {
   final overlay = Overlay.of(context);
 
@@ -4275,52 +4644,91 @@ class _CardViewState extends State<_CardView> {
   });
 }
 
-  Future<void> _loadCardTransactions() async {
+Future<void> _loadCardLockState() async {
   try {
-    final data = await ApiService.getCardTransactions(widget.regId);
+    final res = await ApiService.getCardStatus(widget.regId);
+
+    if (!mounted) return;
+
+    setState(() {
+      isCardLocked = res["is_locked"] == true;
+      loadingLockState = false;
+    });
+
+    // ALSO FETCH CARD LAST4
+    final card = await ApiService.getLumeCard(widget.regId);
+
+    if (card["card_exists"] == true) {
+      setState(() {
+        cardLast4 = card["card"]["card_last4"] ?? "";
+      });
+    }
+
+  } catch (_) {
+    if (!mounted) return;
+
+    setState(() {
+      loadingLockState = false;
+    });
+  }
+}
+
+
+
+  Future<void> _loadCardTransactions() async {
+  setState(() => loadingCardTxns = true);
+
+  try {
+    final data =
+        await ApiService.getCardTransactions(widget.regId);
+
+    final filtered = data
+        .where((t) => t["txn_type"] == "spend")
+        .toList();
+
     if (!mounted) return;
 
     final dashboard =
         context.findAncestorStateOfType<DashboardScreenState>();
 
-    /// ===== FIRST LOAD SAFETY =====
-    if (cardTransactions.isEmpty && data.isNotEmpty) {
-      cardTransactions = data;
-    } else if (data.isNotEmpty) {
+    /// ===== CHECK IF NEW SPEND TRANSACTION ARRIVED =====
+if (filtered.isNotEmpty) {
 
-      final latest = data.first;
-      final oldLatest =
-          cardTransactions.isNotEmpty ? cardTransactions.first : null;
+  final latestNew = filtered.first;
 
-      final isNew =
-          oldLatest == null || latest["id"] != oldLatest["id"];
+  if (cardTransactions.isNotEmpty) {
 
-     if (isNew) {
+    final latestOld = cardTransactions.first;
+
+    final bool isNew =
+        latestNew["id"] != latestOld["id"];
+
+    if (isNew) {
+
       final double amount =
-          double.tryParse(latest["amount"].toString()) ?? 0;
+          double.tryParse(latestNew["amount"].toString()) ?? 0;
 
       _showCardSpendAnimation(amount);
 
-      /// DASHBOARD GLOBAL REFRESH
-      await dashboard?.loadUnreadCount();
-      await dashboard?.loadUnrevealedRewardsCount();
-      await dashboard?.refreshWalletNow();
-      await dashboard?.refreshStudentState();
-      final rewardsView =
-          context.findAncestorStateOfType<_RewardsViewState>();
-
-      await rewardsView?.loadPendingDragRewards();
+      await Future.wait([
+        dashboard?.loadUnreadCount() ?? Future.value(),
+        dashboard?.refreshWalletNow() ?? Future.value(),
+      ]);
     }
+  }
+}
 
-    }
 
-    setState(() {
-      cardTransactions = data;
+    /// ===== UPDATE STATE SAFELY =====
+   setState(() {
+      cardTransactions = filtered;
       loadingCardTxns = false;
     });
 
-  } catch (_) {
+
+  } catch (e) {
     if (!mounted) return;
+
     setState(() => loadingCardTxns = false);
   }
 }
@@ -4331,6 +4739,7 @@ class _CardViewState extends State<_CardView> {
   void initState() {
     super.initState();
     _loadCardTransactions();
+    _loadCardLockState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_hintShownOnce) {
@@ -4687,16 +5096,10 @@ class _CardViewState extends State<_CardView> {
                       ),
 
                       _CardActionButton(
-                        icon: Icons.lock_outline,
-                        label: "Lock Card",
-                        onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Lock Card feature coming soon"),
-                          ),
-                        );
-                      },
-                      ),
+                          icon: isCardLocked ? Icons.lock : Icons.lock_open,
+                          label: isCardLocked ? "Unlock Card" : "Lock Card",
+                          onTap: _showLockBottomSheet,
+                        ),
 
                       _CardActionButton(
                         icon: Icons.settings_outlined,
@@ -4714,8 +5117,16 @@ class _CardViewState extends State<_CardView> {
                   _CardTransactionHistoryCard(
                     loading: loadingCardTxns,
                     transactions: cardTransactions,
+                    regId: widget.regId,  
+                  ),
+
+
+                  const SizedBox(height: 20),
+                  _CardPinSection(
                     regId: widget.regId,
                   ),
+
+
                 ],
               )
             : _buildLockedKycCard(),
@@ -5301,10 +5712,9 @@ class _CardTransactionHistoryCard extends StatelessWidget {
               Column(
                 children: transactions
                     .take(5)
-                    .map<Widget>((t) => TransactionTile(
-                          txn: t,
-                          regId: regId,
-                        ))
+                    .map<Widget>((t) => CardTransactionTile(
+                              txn: t,
+                            ))
                     .toList(),
               ),
           ],
@@ -5314,3 +5724,141 @@ class _CardTransactionHistoryCard extends StatelessWidget {
   }
 }
 
+class _CardPinSection extends StatefulWidget {
+  final int regId;
+
+  const _CardPinSection({
+    required this.regId,
+  });
+
+  @override
+  State<_CardPinSection> createState() => _CardPinSectionState();
+}
+
+class _CardPinSectionState extends State<_CardPinSection> {
+
+  bool pinSet = false;
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPinStatus();
+  }
+
+  Future<void> _loadPinStatus() async {
+    try {
+      final res = await ApiService.getPinStatus(widget.regId);
+
+      if (!mounted) return;
+
+      setState(() {
+        pinSet = res["card"] == true;
+        loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 16),
+        ],
+      ),
+      child: Row(
+        children: [
+
+          Container(
+            height: 48,
+            width: 48,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE8ECFF),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.lock_outline,
+              color: Color(0xFF4C6EF5),
+            ),
+          ),
+
+          const SizedBox(width: 16),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+
+                const Text(
+                  "Card PIN",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+
+                const SizedBox(height: 4),
+
+                Text(
+                  loading
+                      ? "Checking..."
+                      : pinSet
+                          ? "Card PIN is set"
+                          : "Set your card PIN",
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          GestureDetector(
+            onTap: loading
+                ? null
+                : () async {
+
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PinSettingsScreen(
+                          regId: widget.regId,
+                          initialTab: "card",
+                        ),
+                      ),
+                    );
+
+                    _loadPinStatus();
+                  },
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 8,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4C6EF5),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                pinSet ? "Change" : "Set",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+}

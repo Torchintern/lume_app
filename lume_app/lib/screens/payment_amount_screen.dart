@@ -181,7 +181,7 @@ class _PaymentAmountScreenState
             : widget.payee,
 
         payee: widget.payee,
-        isWallet: !widget.payee.contains("@"),
+        paymentType: widget.payee.contains("@") ? "UPI" : "Wallet",
         regId: widget.regId,
         fullName: details["full_name"] ?? "",
         mobile: details["mobile"] ?? "",

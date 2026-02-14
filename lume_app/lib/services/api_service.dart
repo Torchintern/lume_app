@@ -648,9 +648,12 @@ static Future<Map<String, bool>> getPinStatus(int regId) async {
   if (res.statusCode == 200) {
     final data = jsonDecode(res.body);
     return {
-      "wallet": data["wallet_pin_set"] == true,
-      "card": data["card_pin_set"] == true,
+      "wallet": data["wallet"],
+      "card": data["card"],
+      "wallet_locked": data["wallet_locked"],
+      "card_locked": data["card_locked"],
     };
+
   }
 
   return {
@@ -771,7 +774,7 @@ static Future<void> deleteSavedCard(int cardId) async {
     headers: headers,
   );
 }
-// ======= 2nd call to add money ============
+// ======= 2nd call to add money ============a
 static Future<int> initAddMoney({
   required int regId,
   required double amount,
@@ -793,15 +796,19 @@ static Future<int> initAddMoney({
 
   return jsonDecode(res.body)["txn_id"];
 }
+
+
 //  ====== 2nd call for verify and add money ========
 static Future<String> verifyAddMoney({
   required int txnId,
   required String otp,
   required bool saveCard,
   required Map<String, dynamic> cardData,
+  required int regId,
 }) async {
+
   final res = await http.post(
-    Uri.parse("$baseUrl/wallet/add-money/verify"), 
+    Uri.parse("$baseUrl/wallet/add-money/verify"),
     headers: {"Content-Type": "application/json"},
     body: jsonEncode({
       "txn_id": txnId,
@@ -810,12 +817,26 @@ static Future<String> verifyAddMoney({
       "card_data": cardData,
     }),
   );
+
   if (res.statusCode != 200) {
     return "failed";
   }
+
   final data = jsonDecode(res.body);
-  return data["status"] ?? "failed"; // "success" | "failed"
+
+  if (data["status"] == "success") {
+    await Future.wait([
+      getWalletBalance(regId),
+      getTransactionHistory(regId),
+      getCardTransactions(regId),
+      getUnreadNotificationCount(regId),
+    ]);
+
+  }
+
+  return data["status"] ?? "failed";
 }
+
 // ====== Cancel add money =======
 static Future<void> cancelAddMoney(int txnId) async {
   await http.post(
@@ -1230,6 +1251,55 @@ static Future<void> refreshAllRewardsData(int regId) async {
     ]);
   } catch (_) {}
 }
+
+// ======== Get card Status ============
+static Future<Map<String, dynamic>> getCardStatus(int regId) async {
+  final response = await http.get(
+    Uri.parse("$baseUrl/lume-card/status/$regId"),
+  );
+
+  if (response.statusCode == 200) {
+    return jsonDecode(response.body);
+  } else {
+    throw Exception("Failed to fetch card status");
+  }
+}
+
+
+// ======= Toggle Card Lock ============
+static Future<bool> toggleCardLock(int regId) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/lume-card/lock"),
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({"reg_id": regId}),
+  );
+
+  if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+    return data["is_locked"] == true;
+  } else {
+    throw Exception("Failed to toggle card lock");
+  }
+}
+
+static Future<String?> getCardLast4(int regId) async {
+  final response = await http.get(
+    Uri.parse("$baseUrl/lume-card/$regId"),
+  );
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+
+    if (data["card_exists"] == true) {
+      return data["card"]["card_last4"];
+    }
+  }
+
+  return null;
+}
+
+
+
 
 
 }

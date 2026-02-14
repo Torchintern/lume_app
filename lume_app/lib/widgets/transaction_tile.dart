@@ -12,9 +12,12 @@ class TransactionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String direction = txn["direction"]; // debit | credit | topup
-    final bool isIncoming = direction == "credit";
-    final bool isTopup = direction == "topup";
+    final String direction =
+    (txn["direction"] ?? "debit").toString();
+
+final bool isIncoming = direction == "credit";
+final bool isTopup = direction == "topup";
+
 
     Color amountColor;
     IconData icon;
@@ -31,7 +34,10 @@ class TransactionTile extends StatelessWidget {
     }
 
     Color statusColor;
-    switch (txn["status"]) {
+    final String status =
+    (txn["status"] ?? "pending").toString();
+
+switch (status) {
       case "success":
         statusColor = Colors.green;
         break;
@@ -45,7 +51,10 @@ class TransactionTile extends StatelessWidget {
         statusColor = Colors.grey;
     }
     final String displayName =
-        (txn["display_name"] ?? "").toString().trim();
+    (txn["display_name"] ??
+     txn["merchant_name"] ??
+     "Unknown").toString().trim();
+
     final String upiId =
         (txn["upi_id"] ?? "").toString().trim();
 
@@ -64,7 +73,7 @@ class TransactionTile extends StatelessWidget {
         direction: txn["direction"],
         payeeName: displayName,
         payee: upiId,
-        isWallet: txn["payment_type"] == "Wallet",
+        paymentType: txn["payment_type"],
         createdAt: txn["created_at"],
         note: txn["split_note"],
         regId: regId,
@@ -109,7 +118,7 @@ class TransactionTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _formatDate(txn["created_at"]),
+                    _formatDate(txn["created_at"]?.toString()),
                     style: const TextStyle(
                       fontSize: 12,
                       color: Colors.grey,
@@ -163,8 +172,7 @@ class TransactionTile extends StatelessWidget {
 
   String _amountText(dynamic txn) {
     final double amount = double.parse(txn["amount"].toString());
-    final String direction = txn["direction"];
-
+    final String direction = (txn["direction"] ?? "debit").toString();
     if (direction == "credit" || direction == "topup") {
       return "+₹${amount.toStringAsFixed(2)}";
     }

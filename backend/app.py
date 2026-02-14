@@ -1039,7 +1039,7 @@ def wallet_to_upi_payment():
                 amount,
                 "success",
                 None,
-                "upi",
+                "upi_payment",
                 "upi",
                 upi_name
             )
@@ -1108,7 +1108,7 @@ def wallet_to_upi_payment():
             amount,
             "failed",
             str(e),
-            "upi",
+            "upi_payment",
             "upi",
             upi_name
         )
@@ -1345,7 +1345,11 @@ def _log_card_txn(
     amount,
     merchant_name,
     txn_type,
-    status
+    status,
+    merchant_category=None,
+    merchant_reference=None,
+    payment_source="in_app",
+    transaction_reference=None
 ):
     c.execute("""
         INSERT INTO card_transactions (
@@ -1354,17 +1358,26 @@ def _log_card_txn(
             amount,
             merchant_name,
             txn_type,
-            status
+            status,
+            merchant_category,
+            merchant_reference,
+            payment_source,
+            transaction_reference
         )
-        VALUES (%s,%s,%s,%s,%s,%s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         reg_id,
         card_id,
         float(amount),
         merchant_name,
         txn_type,
-        status
+        status,
+        merchant_category,
+        merchant_reference,
+        payment_source,
+        transaction_reference
     ))
+
 
     txn_id = c.lastrowid
 
@@ -1430,6 +1443,7 @@ def get_transactions(reg_id):
               wt.receiver_reg_id,
               wt.receiver_upi_id,
               wt.counterparty_name,
+              wt.payment_method,
 
               s_sender.full_name AS sender_name,
               rs_sender.upi_id AS sender_upi_id,
@@ -1458,31 +1472,58 @@ def get_transactions(reg_id):
 
         for t in rows:
             split_note = None
-            txn_type = t["txn_type"]
-            sender_id = t["sender_reg_id"]
+            txn_type = t.get("txn_type")
+            sender_id = t.get("sender_reg_id")
+            payment_method = t.get("payment_method")
 
             payment_type = "Wallet"
             display_name = ""
             upi_id = ""
+            title = ""
+            direction = ""
 
-            # ================= WALLET TOP-UP =================
+            # ================= ADD MONEY (TOP-UP) =================
             if txn_type == "add_money":
                 direction = "topup"
-                title = "Wallet Top-Up"
-                display_name = "Wallet"
+
+                if payment_method == "card":
+                    payment_type = "Card"
+                    title = "Card Top-Up"
+                    display_name = "Card Top-Up"
+                elif payment_method == "upi":
+                    payment_type = "UPI"
+                    title = "UPI Top-Up"
+                    display_name = "UPI Top-Up"
+                else:
+                    payment_type = "Wallet"
+                    title = "Wallet Top-Up"
+                    display_name = "Wallet Top-Up"
+
                 upi_id = ""
-                payment_type = "Wallet"
+
+            # ================= CARD SPEND (if exists) =================
+            elif txn_type == "spend":
+                direction = "debit"
+                payment_type = "Card"
+
+                display_name = (
+                    t.get("counterparty_name")
+                    or "Card Payment"
+                )
+
+                title = f"Card Payment to {display_name}"
+                upi_id = ""
 
             # ================= PAID (DEBIT) =================
             elif sender_id == reg_id:
                 direction = "debit"
+
                 raw_name = (
-                    t["counterparty_name"]
-                    or t["receiver_name"]
+                    t.get("counterparty_name")
+                    or t.get("receiver_name")
                     or "Unknown"
                 )
 
-                split_note = None
                 display_name = raw_name
 
                 if raw_name and " | Split - " in raw_name:
@@ -1490,32 +1531,41 @@ def get_transactions(reg_id):
                     display_name = parts[0]
                     split_note = parts[1] if len(parts) > 1 else None
 
-
                 title = f"Paid to {display_name}"
-                upi_id = t["receiver_upi_id"] or ""
-                payment_type = "Wallet" if txn_type == "transfer" else "UPI"
+                upi_id = t.get("receiver_upi_id") or ""
+
+                if txn_type == "transfer":
+                    payment_type = "Wallet"
+                elif txn_type == "upi_payment":
+                    payment_type = "UPI"
+                else:
+                    payment_type = "UPI"
 
             # ================= RECEIVED (CREDIT) =================
             else:
                 direction = "credit"
 
                 display_name = (
-                    t["sender_name"]
-                    or t["counterparty_name"]
+                    t.get("sender_name")
+                    or t.get("counterparty_name")
                     or "Unknown"
                 )
 
                 title = f"Received from {display_name}"
-                upi_id = t["sender_upi_id"] or ""
-                payment_type = "Wallet" if txn_type == "transfer" else "UPI"
+                upi_id = t.get("sender_upi_id") or ""
+
+                if txn_type == "transfer":
+                    payment_type = "Wallet"
+                else:
+                    payment_type = "UPI"
 
             # ================= STATUS TEXT =================
-            if t["status"] == "success":
+            if t.get("status") == "success":
                 status_text = "Success"
-            elif t["status"] == "failed":
-                if t["failure_reason"] == "USER_CANCELLED":
+            elif t.get("status") == "failed":
+                if t.get("failure_reason") == "USER_CANCELLED":
                     status_text = "Cancelled"
-                elif t["failure_reason"] == "AUTO_CANCELLED_TIMEOUT":
+                elif t.get("failure_reason") == "AUTO_CANCELLED_TIMEOUT":
                     status_text = "Expired"
                 else:
                     status_text = "Failed"
@@ -1523,20 +1573,21 @@ def get_transactions(reg_id):
                 status_text = "Pending"
 
             result.append({
-                "id": t["id"],
-                "amount": float(t["amount"]),
+                "id": t.get("id"),
+                "amount": float(t.get("amount") or 0),
                 "direction": direction,
                 "display_name": display_name,
                 "upi_id": upi_id,
                 "split_note": split_note,
                 "title": title,
                 "payment_type": payment_type,
-                "status": t["status"],
+                "status": t.get("status"),
                 "status_text": status_text,
-                "failure_reason": t["failure_reason"],
+                "failure_reason": t.get("failure_reason"),
+                "txn_type": txn_type,
                 "created_at": (
                     t["created_at"].isoformat() + "Z"
-                    if t["created_at"]
+                    if t.get("created_at")
                     else None
                 ),
             })
@@ -1550,6 +1601,8 @@ def get_transactions(reg_id):
     finally:
         c.close()
         conn.close()
+
+
 # ================= ADD MONEY TO WALLET =================
 @app.route("/api/wallet/add-money", methods=["POST"])
 def add_money_to_wallet():
@@ -1640,8 +1693,10 @@ def _log_add_money_txn(
             amount,
             status,
             failure_reason,
-            txn_type
+            txn_type,
+            payment_method
         )
+
         VALUES (%s, %s, %s, %s, %s, %s, %s)
     """, (
         reg_id,          # sender
@@ -1650,7 +1705,8 @@ def _log_add_money_txn(
         float(amount),
         status,
         failure_reason,
-        "add_money"
+        "add_money",
+        "card"
     ))
 
 
@@ -1862,8 +1918,10 @@ def get_pin_status(reg_id):
         }, 200
 
     return {
-        "wallet_pin_set": bool(row["wallet_pin_set"]),
-        "card_pin_set": bool(row["card_pin_set"])
+        "wallet": bool(row["wallet_pin_set"]),
+        "card": bool(row["card_pin_set"]),
+        "wallet_locked": bool(row.get("wallet_pin_locked", 0)),
+        "card_locked": bool(row.get("card_pin_locked", 0))
     }, 200
 
 # ==================== Verify PIN ======================
@@ -2031,53 +2089,69 @@ def init_add_money():
     if not d or "reg_id" not in d or "amount" not in d:
         return {"message": "INVALID_REQUEST"}, 400
 
-    amount = float(d["amount"])
+    try:
+        amount = float(d["amount"])
+    except (ValueError, TypeError):
+        return {"message": "INVALID_AMOUNT"}, 400
+
     if amount <= 0:
         return {"message": "INVALID_AMOUNT"}, 400
 
     conn = get_db_connection()
     c = conn.cursor(dictionary=True)
 
-    # 🔹 Fetch mobile
-    c.execute("""
-        SELECT s.mobile
-        FROM registered_students rs
-        JOIN students s ON rs.student_id = s.id
-        WHERE rs.id = %s
-    """, (d["reg_id"],))
+    try:
+        # Fetch mobile
+        c.execute("""
+            SELECT s.mobile
+            FROM registered_students rs
+            JOIN students s ON rs.student_id = s.id
+            WHERE rs.id = %s
+        """, (d["reg_id"],))
 
-    user = c.fetchone()
-    if not user:
+        user = c.fetchone()
+        if not user:
+            return {"message": "USER_NOT_FOUND"}, 404
+
+        send_mobile_otp(user["mobile"])
+
+        # Decide payment method
+        payment_method = d.get("funding_source", "card")
+
+        # Insert pending transaction
+        c.execute("""
+            INSERT INTO wallet_transactions (
+                sender_reg_id,
+                receiver_reg_id,
+                amount,
+                payment_method,
+                status,
+                txn_type
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            d["reg_id"],          # sender
+            d["reg_id"],          # receiver (self top-up)
+            amount,
+            payment_method,       # card / upi
+            "pending",
+            "add_money"
+        ))
+
+        txn_id = c.lastrowid
+        conn.commit()
+
+        return {"txn_id": txn_id}, 200
+
+    except Exception as e:
+        print("ADD MONEY INIT ERROR:", e)
+        conn.rollback()
+        return {"message": "FAILED_TO_INIT_ADD_MONEY"}, 500
+
+    finally:
         c.close()
         conn.close()
-        return {"message": "USER_NOT_FOUND"}, 404
 
-    send_mobile_otp(user["mobile"])
-
-    c.execute("""
-        INSERT INTO wallet_transactions (
-            sender_reg_id,
-            receiver_reg_id,
-            amount,
-            payment_method,
-            status,
-            txn_type,
-            card_id
-        )
-        VALUES (%s, %s, %s, 'card', 'pending', 'add_money', %s)
-    """, (
-        d["reg_id"],
-        d["reg_id"],
-        amount,
-        d.get("saved_card_id")
-    ))
-
-    txn_id = c.lastrowid
-    conn.commit()
-    c.close()
-    conn.close()
-
-    return {"txn_id": txn_id}, 200
 
 # ============= get cards ===============
 @app.route("/api/cards/<int:reg_id>", methods=["GET"])
@@ -2173,13 +2247,16 @@ def cancel_add_money():
 # ============== Verify add money =============
 @app.route("/api/wallet/add-money/verify", methods=["POST"])
 def verify_add_money():
+
     auto_cancel_expired_pending_transactions()
+
     d = request.json
     txn_id = d.get("txn_id")
 
     if not txn_id or "otp" not in d:
         return {"status": "failed", "reason": "INVALID_REQUEST"}, 400
 
+    # OTP Validation
     if not verify_otp(d["otp"]):
         _update_txn_status(txn_id, "failed", "INVALID_OTP")
         return {"status": "failed"}, 400
@@ -2188,14 +2265,16 @@ def verify_add_money():
     c = conn.cursor(dictionary=True)
 
     try:
+        # ===== LOCK TRANSACTION =====
         c.execute("""
-            SELECT sender_reg_id, amount, status
+            SELECT id, sender_reg_id, amount, status
             FROM wallet_transactions
             WHERE id=%s
             FOR UPDATE
         """, (txn_id,))
 
         txn = c.fetchone()
+
         if not txn:
             return {"status": "failed", "reason": "INVALID_TXN"}, 400
 
@@ -2205,57 +2284,49 @@ def verify_add_money():
                 "reason": txn.get("failure_reason")
             }, 200
 
-        # Credit wallet
+        reg_id = txn["sender_reg_id"]
+        amount = float(txn["amount"])
+
+        # ===== CREDIT WALLET =====
         c.execute("""
             UPDATE wallets
             SET balance = balance + %s
             WHERE registered_student_id=%s
-        """, (txn["amount"], txn["sender_reg_id"]))
+        """, (amount, reg_id))
 
-        #  Mark success
+        # ===== MARK WALLET TXN SUCCESS =====
         c.execute("""
             UPDATE wallet_transactions
-            SET status='success', failure_reason=NULL
+            SET status='success',
+                failure_reason=NULL
             WHERE id=%s
         """, (txn_id,))
-        
-        # Get user's lume card id
-        c.execute("""
-            SELECT id
-            FROM lume_cards
-            WHERE reg_id=%s
-        """, (txn["sender_reg_id"],))
 
-        card_row = c.fetchone()
-        card_id = card_row["id"] if card_row else None
-
-        # Log card txn
-        _log_card_txn(
-            c,
-            txn["sender_reg_id"],
-            card_id,
-            txn["amount"],
-            "Wallet Topup",
-            "wallet_topup",
-            "success"
-        )
-
-        #  Save card ONLY if checkbox selected
+        # ===== SAVE CARD IF CHECKED =====
         if d.get("save_card") is True:
-            save_card_token(d.get("card_data", {}), txn["sender_reg_id"])
+            save_card_token(
+                d.get("card_data", {}),
+                reg_id
+            )
 
         conn.commit()
-        return {"status": "success"}, 200
+
+        return {
+            "status": "success",
+            "credited_amount": amount
+        }, 200
 
     except Exception as e:
         conn.rollback()
+        print("VERIFY ADD MONEY ERROR:", e)
+
         _update_txn_status(txn_id, "failed", str(e))
+
         return {"status": "failed"}, 500
 
     finally:
         c.close()
         conn.close()
-
 
 # helpers
 def _update_txn_status(txn_id, status, reason):
@@ -3727,17 +3798,86 @@ def get_lume_card(reg_id):
 def lock_card():
     d = request.json
 
+    if not d or "reg_id" not in d:
+        return {"message": "INVALID_REQUEST"}, 400
+
+    reg_id = d["reg_id"]
+
     conn = get_db_connection()
-    c = conn.cursor()
+    c = conn.cursor(dictionary=True)
 
-    c.execute("""
-        UPDATE lume_cards
-        SET is_locked = NOT is_locked
-        WHERE reg_id=%s
-    """, (d["reg_id"],))
+    try:
+        # ===== LOCK CARD ROW =====
+        c.execute("""
+            SELECT id, is_locked, card_last4
+            FROM lume_cards
+            WHERE reg_id=%s
+            FOR UPDATE
+        """, (reg_id,))
 
-    conn.commit()
-    return {"message": "UPDATED"}
+        card = c.fetchone()
+
+        if not card:
+            return {"message": "CARD_NOT_FOUND"}, 404
+        
+        # ===== REQUIRE CARD PIN =====
+        c.execute("""
+            SELECT card_pin_hash
+            FROM wallet_security
+            WHERE reg_id=%s
+        """, (reg_id,))
+
+        pin = c.fetchone()
+
+        if not pin or not pin["card_pin_hash"]:
+            return {"message": "CARD_PIN_NOT_SET"}, 403
+
+
+        # ===== TOGGLE LOCK =====
+        new_state = 0 if card["is_locked"] == 1 else 1
+
+        c.execute("""
+            UPDATE lume_cards
+            SET is_locked=%s
+            WHERE reg_id=%s
+        """, (new_state, reg_id))
+
+        # ===== CREATE NOTIFICATION =====
+        status_text = "locked" if new_state == 1 else "unlocked"
+        last4 = card["card_last4"]
+
+        c.execute("""
+            INSERT INTO notifications (
+                reg_id,
+                title,
+                message,
+                type,
+                is_read
+            )
+            VALUES (%s,%s,%s,%s,0)
+        """, (
+            reg_id,
+            "Card Security Update",
+            f"Your card ending with {last4} has been {status_text}.",
+            "card_security"
+        ))
+
+        conn.commit()
+
+        return {
+            "message": "CARD_LOCK_UPDATED",
+            "is_locked": new_state == 1
+        }, 200
+
+    except Exception as e:
+        conn.rollback()
+        print("LOCK CARD ERROR:", e)
+        return {"message": "LOCK_FAILED"}, 500
+
+    finally:
+        c.close()
+        conn.close()
+
 # ==== Get Card Details ========
 @app.route("/api/card/details/<int:reg_id>", methods=["GET"])
 def get_card_details(reg_id):
@@ -3786,6 +3926,9 @@ def get_card_transactions(reg_id):
                 merchant_name,
                 txn_type,
                 status,
+                merchant_category,
+                payment_source,
+                transaction_reference,
                 created_at
             FROM card_transactions
             WHERE reg_id=%s
@@ -3793,16 +3936,200 @@ def get_card_transactions(reg_id):
         """, (reg_id,))
 
         rows = c.fetchall()
+        result = []
 
         for r in rows:
-            if r["created_at"]:
-                r["created_at"] = r["created_at"].isoformat()
 
-        return rows, 200
+            # Format timestamp
+            created_at = (
+                r["created_at"].isoformat() + "Z"
+                if r["created_at"] else None
+            )
+
+            # Status Text
+            if r["status"] == "success":
+                status_text = "Success"
+            elif r["status"] == "failed":
+                status_text = "Failed"
+            else:
+                status_text = "Pending"
+
+            # Display Title
+            if r["txn_type"] == "wallet_topup":
+                display_title = "Wallet Top-Up"
+            elif r["txn_type"] == "spend":
+                display_title = r["merchant_name"]
+            else:
+                display_title = r["merchant_name"] or "Card Transaction"
+
+            result.append({
+                "id": r["id"],
+                "amount": float(r["amount"]),
+                "merchant_name": r["merchant_name"],
+                "display_title": display_title,
+                "txn_type": r["txn_type"],
+                "status": r["status"],
+                "status_text": status_text,
+                "merchant_category": r.get("merchant_category"),
+                "payment_source": r.get("payment_source"),
+                "transaction_reference": r.get("transaction_reference"),
+                "created_at": created_at
+            })
+
+        return jsonify(result), 200
 
     except Exception as e:
         print("CARD TXN ERROR:", e)
-        return [], 200
+        return jsonify([]), 200
+
+    finally:
+        c.close()
+        conn.close()
+
+# ====== Card Status ===========
+@app.route("/api/lume-card/status/<int:reg_id>", methods=["GET"])
+def get_card_status(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        c.execute("""
+            SELECT is_locked, is_blocked
+            FROM lume_cards
+            WHERE reg_id=%s
+        """, (reg_id,))
+
+        card = c.fetchone()
+
+        if not card:
+            return {"message": "CARD_NOT_FOUND"}, 404
+
+        return {
+            "is_locked": card["is_locked"] == 1,
+            "is_blocked": card["is_blocked"] == 1
+        }, 200
+
+    finally:
+        c.close()
+        conn.close()
+# ======== Card Pay =======
+# ================= CARD PAYMENT =================
+@app.route("/api/card/pay", methods=["POST"])
+def card_payment():
+    d = request.json
+
+    if not d or "reg_id" not in d or "amount" not in d:
+        return {"message": "INVALID_REQUEST"}, 400
+
+    reg_id = d["reg_id"]
+    amount = float(d["amount"])
+
+    if amount <= 0:
+        return {"message": "INVALID_AMOUNT"}, 400
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    try:
+        # ================= CHECK CARD EXISTS =================
+        c.execute("""
+            SELECT id, is_locked
+            FROM lume_cards
+            WHERE reg_id=%s
+            FOR UPDATE
+        """, (reg_id,))
+        card = c.fetchone()
+
+        if not card:
+            return {"message": "CARD_NOT_FOUND"}, 404
+
+        # ================= BLOCK IF CARD LOCKED =================
+        if card["is_locked"] == 1:
+            return {"message": "CARD_LOCKED"}, 403
+
+        # ================= CHECK CARD PIN LOCK =================
+        c.execute("""
+            SELECT card_pin_locked
+            FROM student_pins
+            WHERE reg_id=%s
+        """, (reg_id,))
+        pin_data = c.fetchone()
+
+        if pin_data and pin_data["card_pin_locked"] == 1:
+            return {"message": "CARD_PIN_LOCKED"}, 403
+
+        # ================= CHECK WALLET BALANCE =================
+        c.execute("""
+            SELECT wallet_balance
+            FROM registered_students
+            WHERE id=%s
+            FOR UPDATE
+        """, (reg_id,))
+        user = c.fetchone()
+
+        if not user:
+            return {"message": "USER_NOT_FOUND"}, 404
+
+        if float(user["wallet_balance"]) < amount:
+            return {"message": "INSUFFICIENT_BALANCE"}, 400
+
+        # ================= DEDUCT BALANCE =================
+        new_balance = float(user["wallet_balance"]) - amount
+
+        c.execute("""
+            UPDATE registered_students
+            SET wallet_balance=%s
+            WHERE id=%s
+        """, (new_balance, reg_id))
+
+        # ================= INSERT TRANSACTION =================
+        c.execute("""
+            INSERT INTO wallet_transactions (
+                sender_reg_id,
+                receiver_reg_id,
+                amount,
+                status,
+                txn_type,
+                payment_method
+            )
+            VALUES (%s, NULL, %s, 'success', 'spend', 'card')
+        """, (
+            reg_id,
+            amount
+        ))
+
+        txn_id = c.lastrowid
+
+        # ================= CREATE NOTIFICATION =================
+        c.execute("""
+            INSERT INTO notifications (
+                reg_id,
+                title,
+                message,
+                type,
+                is_read
+            )
+            VALUES (%s, %s, %s, %s, 0)
+        """, (
+            reg_id,
+            "Card Payment Successful",
+            f"₹{amount:.2f} spent using your Lume Card.",
+            "card_spend"
+        ))
+
+        conn.commit()
+
+        return {
+            "message": "PAYMENT_SUCCESS",
+            "txn_id": txn_id,
+            "new_balance": new_balance
+        }, 200
+
+    except Exception as e:
+        conn.rollback()
+        print("CARD PAYMENT ERROR:", e)
+        return {"message": "CARD_PAYMENT_FAILED"}, 500
 
     finally:
         c.close()
