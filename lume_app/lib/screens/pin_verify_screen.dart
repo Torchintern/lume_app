@@ -192,19 +192,35 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
         leading: const BackButton(color: Colors.black),
       ),
       body: SafeArea(
-        child: Column(
-          children: [
+  child: Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+    child: Container(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 16),
+        ],
+      ),
+      child: Column(
+        children: [
+
             const SizedBox(height: 24),
 
-            const Text(
+           const Center(
+            child: Text(
               "Enter PIN",
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
               ),
             ),
+          ),
 
-            const SizedBox(height: 32),
+
+            const SizedBox(height: 28),
 
             // ===== PIN DOTS =====
             Row(
@@ -219,7 +235,7 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
                     shape: BoxShape.circle,
                     color: index < enteredPin.length
                         ? const Color(0xFF4C6EF5)
-                        : Colors.grey.shade300,
+                        : const Color(0xFFE8ECFF),
                   ),
                 );
               }),
@@ -268,13 +284,18 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
                 ),
               ),
 
-            const Spacer(),
+            const SizedBox(height: 24),
+            if (!locked)
+              Expanded(
+                child: Center(child: _buildKeypad()),
+              ),
 
-            if (!locked) _buildKeypad(),
 
             const SizedBox(height: 24),
           ],
         ),
+      ),
+  ),
       ),
     );
   }
@@ -314,19 +335,33 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
   }
 
   Widget _keyButton(String value) {
+    final size = MediaQuery.of(context).size.width / 5.2;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(40),
         onTap: () => _onKeyTap(value),
         child: Container(
-          width: 64,
-          height: 64,
+          width: size,
+          height: size,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.grey.shade200,
-          ),
+          decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Color(0xFFE8ECFF),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.white,
+              offset: Offset(-2, -2),
+              blurRadius: 6,
+            ),
+            BoxShadow(
+              color: Color(0x1A000000),
+              offset: Offset(2, 2),
+              blurRadius: 6,
+            ),
+          ],
+        ),
+
           child: Text(
             value,
             style: const TextStyle(
@@ -341,19 +376,32 @@ class _PinVerifyScreenState extends State<PinVerifyScreen> {
 
   Widget _iconButton(
       IconData icon, VoidCallback onTap) {
+        final size = MediaQuery.of(context).size.width / 5.2;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(40),
         onTap: onTap,
         child: Container(
-          width: 64,
-          height: 64,
+          width: size,
+          height: size,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.grey.shade200,
-          ),
+          decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Color(0xFFE8ECFF),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.white,
+              offset: Offset(-2, -2),
+              blurRadius: 6,
+            ),
+            BoxShadow(
+              color: Color(0x1A000000),
+              offset: Offset(2, 2),
+              blurRadius: 6,
+            ),
+          ],
+        ),
           child: Icon(
             icon,
             size: 22,

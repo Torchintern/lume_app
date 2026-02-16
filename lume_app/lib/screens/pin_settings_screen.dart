@@ -43,6 +43,13 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
     _loadPinStatus();
   }
 
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+
   // ================= LOAD PIN STATUS =================
   Future<void> _loadPinStatus() async {
     try {
@@ -50,8 +57,8 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
       if (!mounted) return;
 
       setState(() {
-      walletHasPin = status["wallet_pin_set"] == true;
-      cardHasPin = status["card_pin_set"] == true;
+      walletHasPin = status["wallet"] == true;
+      cardHasPin = status["card"] == true;
       loading = false;
       });
     } catch (_) {
@@ -136,52 +143,93 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
 
   // ================= RESULT DIALOG =================
   void _showResultDialog({
-    required bool success,
-    required String message,
-  }) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+  required bool success,
+  required String message,
+}) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 18),
+          ],
         ),
-        content: Column(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              success ? Icons.check_circle : Icons.error_outline,
-              color: success ? Colors.green : Colors.red,
-              size: 56,
+
+            /// ICON CIRCLE
+            Container(
+              height: 72,
+              width: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                success ? Icons.check : Icons.close,
+                size: 36,
+                color: const Color(0xFF4C6EF5),
+              ),
             ),
-            const SizedBox(height: 16),
+
+            const SizedBox(height: 18),
+
             Text(
               success ? "PIN Updated" : "Action Failed",
               style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
             ),
+
             const SizedBox(height: 8),
+
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black54,
+              ),
+            ),
+
+            const SizedBox(height: 22),
+
+            /// BUTTON
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context, true);
+                },
+                child: const Text(
+                  "Done",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // close dialog
-              Navigator.pop(context, true); // return to dashboard
-            },
-            child: const Text("OK"),
-          ),
-        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ================= UI =================
   @override
@@ -192,26 +240,68 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
       );
     }
 
-    return WillPopScope(
+      return WillPopScope(
       onWillPop: () async => !widget.forceSetup,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF6F7FB),
         appBar: AppBar(
-          automaticallyImplyLeading: !widget.forceSetup,
-          title: Text(
-            widget.forceSetup ? "Set PIN" : "PIN Settings",
-          ),
-          bottom: TabBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        centerTitle: true,
+        automaticallyImplyLeading: !widget.forceSetup,
+        title: Text(
+          widget.forceSetup ? "Set PIN" : "PIN Settings",
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+
+        body: Column(
+  children: [
+
+    Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 10),
+          ],
+        ),
+       child: Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          height: 46,
+          child: TabBar(
             controller: _tabController,
+            indicatorSize: TabBarIndicatorSize.tab,
+            labelPadding: EdgeInsets.zero,
+            indicator: BoxDecoration(
+              color: const Color(0xFF4C6EF5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.black54,
+            dividerColor: Colors.transparent,
             tabs: const [
-              Tab(text: "Wallet"),
-              Tab(text: "Card"),
+              Tab(child: Center(child: Text("Wallet"))),
+              Tab(child: Center(child: Text("Card"))),
             ],
           ),
         ),
-        body: TabBarView(
-          controller: _tabController,
-          children: [
+      ),
+
+
+      ),
+    ),
+
+    Expanded(
+      child: TabBarView(
+        controller: _tabController,
+        children: [
+
             _PinFlow(
               hasPin: walletHasPin,
               otpVerified: walletOtpVerified,
@@ -225,6 +315,9 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
               onSave: (pin) => _savePin(false, pin),
             ),
           ],
+        ),
+      ),
+  ],
         ),
       ),
     );
@@ -256,37 +349,73 @@ class _PinFlowState extends State<_PinFlow> {
 
   bool get canEnterPin => !widget.hasPin || widget.otpVerified;
 
-  @override
+ @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          Text(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      child: SizedBox.expand(
+        child: Container(
+
+
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(26),
+      boxShadow: const [
+        BoxShadow(color: Colors.black12, blurRadius: 16),
+      ],
+    ),
+    child: Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+    Column(
+      children: [
+
+        Center(
+          child: Text(
             confirmStep ? "Re-enter PIN" : "Create 4-digit PIN",
+            textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+
+        if (widget.hasPin && !widget.otpVerified)
+          Center(
+            child: GestureDetector(
+              onTap: widget.onForgotPin,
+              child: const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  "Change / Forgot PIN",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF4C6EF5),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
           ),
 
-          if (widget.hasPin && !widget.otpVerified)
-            TextButton(
-              onPressed: widget.onForgotPin,
-              child: const Text("Change / Forgot PIN"),
-            ),
-
-          const SizedBox(height: 24),
+        const SizedBox(height: 24),
+      ],
+    ),
 
           _dots(confirmStep ? confirmPin.length : pin.length),
 
           const SizedBox(height: 24),
 
-          _keypad(),
-
-          const SizedBox(height: 24),
+          Expanded(
+            child: Center(
+              child: _keypad(),
+            ),
+          ),
 
           PrimaryButton(
+
             text: confirmStep ? "Set PIN" : "Confirm",
             enabled: confirmStep ? confirmPin.length == 4 : pin.length == 4,
             onPressed: () {
@@ -297,23 +426,80 @@ class _PinFlowState extends State<_PinFlow> {
 
               if (pin != confirmPin) {
                 showDialog(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                context: context,
+                builder: (_) => Dialog(
+                  backgroundColor: Colors.transparent,
+                  child: Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black12, blurRadius: 18),
+                      ],
                     ),
-                    title: const Text("PIN Mismatch"),
-                    content: const Text(
-                      "The PINs you entered do not match. Please try again.",
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+
+                        Container(
+                          height: 72,
+                          width: 72,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE8ECFF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.lock_outline,
+                            size: 36,
+                            color: Color(0xFF4C6EF5),
+                          ),
+                        ),
+
+                        const SizedBox(height: 18),
+
+                        const Text(
+                          "PIN Mismatch",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        const Text(
+                          "The PINs you entered do not match. Please try again.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.black54,
+                          ),
+                        ),
+
+                        const SizedBox(height: 22),
+
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4C6EF5),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text("Try Again"),
+                          ),
+                        ),
+                      ],
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text("OK"),
-                      ),
-                    ],
                   ),
-                );
+                ),
+              );
+
                 setState(() => confirmPin = "");
                 return;
               }
@@ -323,6 +509,8 @@ class _PinFlowState extends State<_PinFlow> {
           ),
         ],
       ),
+  ),
+  ),
     );
   }
 
@@ -331,13 +519,16 @@ class _PinFlowState extends State<_PinFlow> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(
         4,
-        (i) => Container(
+        (i) => AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
           margin: const EdgeInsets.all(6),
-          width: 12,
-          height: 12,
+          width: 14,
+          height: 14,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: i < filled ? Colors.blue : Colors.grey.shade300,
+            color: i < filled
+            ? const Color(0xFF4C6EF5)
+            : const Color(0xFFE8ECFF),
           ),
         ),
       ),
@@ -358,11 +549,16 @@ class _PinFlowState extends State<_PinFlow> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: row.map((k) {
             if (k.isEmpty) return const SizedBox(width: 64);
-
+            final size = MediaQuery.of(context).size.width / 5.2;
             return Padding(
               padding: const EdgeInsets.all(8),
+             child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
               child: InkWell(
+                customBorder: const CircleBorder(),
                 onTap: () {
+
                   if (!canEnterPin) return;
 
                   setState(() {
@@ -383,19 +579,37 @@ class _PinFlowState extends State<_PinFlow> {
                   });
                 },
                 child: Container(
-                  width: 64,
-                  height: 64,
+                  width: size,
+                  height: size,
+
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey.shade200,
-                  ),
+                  decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFE8ECFF),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white,
+                      offset: Offset(-2, -2),
+                      blurRadius: 6,
+                    ),
+                    BoxShadow(
+                      color: Color(0x1A000000),
+                      offset: Offset(2, 2),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+
                   child: Text(
                     k,
-                    style: const TextStyle(fontSize: 22),
+                    style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                  ),
                   ),
                 ),
               ),
+             ),
             );
           }).toList(),
         );

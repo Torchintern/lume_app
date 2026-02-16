@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart';
 import 'student_details_screen.dart';
 import 'login_screen.dart';
 import 'notifications_screen.dart';
@@ -39,6 +40,8 @@ import 'package:lume_app/screens/rewards/cash_won_screen.dart';
 import 'package:lume_app/screens/rewards/coupons_screen.dart';
 import 'rewards/rewards_view_all_sheet.dart';
 import '../widgets/card_transaction_tile.dart';
+import 'card_centre_screen.dart';
+
 class DashboardScreen extends StatefulWidget {
   final int regId;
   final String fullName;
@@ -3934,9 +3937,17 @@ Row(
       ],
     ),
 
-    TextButton(
-      onPressed: openRewardsSheet,
-      child: const Text("View All"),
+    GestureDetector(
+      onTap: openRewardsSheet,
+      child: const Text(
+        "View all",
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF4C6EF5),
+          letterSpacing: 0.3,
+        ),
+      ),
     ),
   ],
 ),
@@ -4234,7 +4245,9 @@ class _DiscountTile extends StatelessWidget {
     );
   }
 }
- // =========== CARD VIEW ===================
+
+
+// =========== CARD VIEW ===================
 class _CardView extends StatefulWidget {
   final int regId;
   final bool isKycCompleted;
@@ -4251,7 +4264,7 @@ class _CardView extends StatefulWidget {
   State<_CardView> createState() => _CardViewState();
 }
 
-class _CardViewState extends State<_CardView> {
+class _CardViewState extends State<_CardView> with RouteAware {
   bool showBalance = false;
   bool loading = true;
   double balance = 0.0;
@@ -4262,6 +4275,11 @@ class _CardViewState extends State<_CardView> {
   bool isCardLocked = false;
   bool loadingLockState = true;
   String cardLast4 = "";
+  String maskedCardNumber = "****";
+  String cardType = "";
+  String cardExpiry = "";
+
+
 
   void _showLockBottomSheet() {
   showModalBottomSheet(
@@ -4341,80 +4359,14 @@ class _CardViewState extends State<_CardView> {
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
-              onPressed: () async {
+              onPressed: () {
+              Navigator.pop(context); 
 
-                Navigator.pop(context); // close confirm sheet
+              _showLockProcessingSheet(
+                locking: !isCardLocked,
+              );
+            },
 
-                try {
-
-                  // ===== TOGGLE LOCK =====
-                  final locked =
-                      await ApiService.toggleCardLock(widget.regId);
-
-                  // ===== GET LAST 4 DIGITS =====
-                  final last4 =
-                      await ApiService.getCardLast4(widget.regId);
-
-                  if (!mounted) return;
-
-                  // ===== UPDATE LOCAL STATE =====
-                  setState(() {
-                    isCardLocked = locked;
-                  });
-
-                  // ===== REFRESH DASHBOARD NOTIFICATION COUNT =====
-                  final dashboard =
-                      context.findAncestorStateOfType<DashboardScreenState>();
-
-                  await dashboard?.loadUnreadCount();
-
-                  // ===== SHOW FLOATING SECURITY ALERT =====
-                  _showCardSecurityFloating(locked);
-
-                  // ===== SHOW SUCCESS SHEET =====
-                  if (last4 != null) {
-                    _showLockSuccessSheet(
-                      locked: locked,
-                      cardLast4: last4,
-                    );
-                  }
-
-                } catch (e) {
-
-                  if (!mounted) return;
-                  showModalBottomSheet(
-                    context: context,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) {
-                      return Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(26),
-                          ),
-                        ),
-                        child: const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.error_outline,
-                                size: 48,
-                                color: Colors.red),
-                            SizedBox(height: 12),
-                            Text(
-                              "Unable to update card status.\nPlease try again.",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                }
-              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4C6EF5),
                 shape: RoundedRectangleBorder(
@@ -4515,87 +4467,150 @@ void _showCardSecurityFloating(bool locked) {
   });
 }
 
-
-void _showLockSuccessSheet({
-  required bool locked,
-  required String cardLast4,
+void _showLockProcessingSheet({
+  required bool locking,
 }) {
+
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
     isDismissible: false,
     enableDrag: false,
-    builder: (_) {
-      return Container(
-        padding: const EdgeInsets.fromLTRB(24, 30, 24, 34),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(26),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+    builder: (sheetContext) {
 
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(10),
+      bool apiCalled = false;
+      bool done = false;
+      String last4 = maskedCardNumber.replaceAll("**** ", "");
+
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+
+          /// CALL API ONLY ONCE
+          if (!apiCalled) {
+            apiCalled = true;
+
+            Future(() async {
+
+              try {
+
+                final locked =
+                    await ApiService.toggleCardLock(widget.regId);
+
+                final fetchedLast4 =
+                    await ApiService.getCardLast4(widget.regId);
+
+                if (!mounted) return;
+
+                setState(() => isCardLocked = locked);
+
+                setModalState(() {
+                  done = true;
+                  last4 = fetchedLast4 ?? last4;
+                });
+
+                _showCardSecurityFloating(locked);
+
+                final dashboard =
+                    context.findAncestorStateOfType<DashboardScreenState>();
+                await dashboard?.loadUnreadCount();
+
+                await Future.delayed(const Duration(seconds: 2));
+
+                if (Navigator.of(sheetContext).canPop()) {
+                  Navigator.of(sheetContext).pop();
+                }
+
+              } catch (_) {
+                if (Navigator.of(sheetContext).canPop()) {
+                  Navigator.of(sheetContext).pop();
+                }
+              }
+
+            });
+          }
+
+          return Container(
+            padding: const EdgeInsets.fromLTRB(24, 30, 24, 34),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(26),
               ),
             ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
 
-            const SizedBox(height: 28),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
 
-            Container(
-              height: 72,
-              width: 72,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFF4C6EF5),
-              ),
-              child: const Icon(
-                Icons.check_rounded,
-                color: Colors.white,
-                size: 36,
-              ),
+                const SizedBox(height: 28),
+
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  child: done
+                      ? Container(
+                          key: const ValueKey(1),
+                          height: 72,
+                          width: 72,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF4C6EF5),
+                          ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                        )
+                      : const SizedBox(
+                          key: ValueKey(2),
+                          height: 72,
+                          width: 72,
+                          child: CircularProgressIndicator(strokeWidth: 4),
+                        ),
+                ),
+
+                const SizedBox(height: 24),
+
+                Text(
+                  done
+                      ? "XXXX $last4 is now ${locking ? "locked" : "unlocked"}!"
+                      : (locking ? "Locking your card..." : "Unlocking your card..."),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                if (done)
+                  Text(
+                    locking
+                        ? "Your card is temporarily disabled."
+                        : "Your card is now active for transactions.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+              ],
             ),
-
-            const SizedBox(height: 24),
-
-            Text(
-              "XXXX $cardLast4 is now ${locked ? "locked" : "unlocked"}!",
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-            Text(
-              locked
-                  ? "Your card is temporarily disabled."
-                  : "Your card is now active for transactions.",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       );
     },
   );
-
-  Future.delayed(const Duration(seconds: 3), () {
-    if (mounted) Navigator.pop(context);
-  });
 }
-
 
 
 
@@ -4646,32 +4661,45 @@ void _showLockSuccessSheet({
 
 Future<void> _loadCardLockState() async {
   try {
-    final res = await ApiService.getCardStatus(widget.regId);
+
+    /// CARD STATUS
+    final status = await ApiService.getCardStatus(widget.regId);
+
+    /// CARD DETAILS
+    final cardRes = await ApiService.getLumeCard(widget.regId);
 
     if (!mounted) return;
 
-    setState(() {
-      isCardLocked = res["is_locked"] == true;
-      loadingLockState = false;
-    });
+    if (cardRes["card_exists"] == true) {
 
-    // ALSO FETCH CARD LAST4
-    final card = await ApiService.getLumeCard(widget.regId);
+      final c = cardRes["card"];
 
-    if (card["card_exists"] == true) {
+      final last4 = c["last4"] ?? "";
+      final network = c["network"] ?? "";
+      final expiry = c["expiry"] ?? "";
+
       setState(() {
-        cardLast4 = card["card"]["card_last4"] ?? "";
+        isCardLocked = status["is_locked"] == true;
+        loadingLockState = false;
+
+        /// IMPORTANT VALUES FOR UI
+        maskedCardNumber = last4.isEmpty ? "****" : "**** $last4";
+        cardType = network;
+        cardExpiry = expiry;
+      });
+
+    } else {
+      setState(() {
+        loadingLockState = false;
       });
     }
 
-  } catch (_) {
+  } catch (e) {
     if (!mounted) return;
-
-    setState(() {
-      loadingLockState = false;
-    });
+    setState(() => loadingLockState = false);
   }
 }
+
 
 
 
@@ -4752,6 +4780,24 @@ if (filtered.isNotEmpty) {
   }
 
 
+  @override
+    void didChangeDependencies() {
+      super.didChangeDependencies();
+      routeObserver.subscribe(this, ModalRoute.of(context)!);
+    }
+
+  @override
+    void dispose() {
+      routeObserver.unsubscribe(this);
+      super.dispose();
+    }
+
+  @override
+  void didPopNext() {
+    _loadCardLockState();
+  }
+
+
   void triggerFlipHint() {
   setState(() {
     showFlipHint = true;
@@ -4782,6 +4828,36 @@ if (filtered.isNotEmpty) {
       });
     }
   }
+
+
+Widget getCardLogo() {
+
+  String asset = "assets/card/default.png";
+
+  switch (cardType.toLowerCase()) {
+    case "visa":
+      asset = "assets/card/visa.png";
+      break;
+
+    case "mastercard":
+      asset = "assets/card/mastercard.png";
+      break;
+
+    case "rupay":
+      asset = "assets/card/rupay.png";
+      break;
+  }
+
+  return Image.asset(
+    asset,
+    width: 34,
+    height: 22,
+    fit: BoxFit.contain,
+  );
+}
+
+
+
 
   Widget _buildLockedKycCard() {
   return GestureDetector(
@@ -4919,101 +4995,147 @@ if (filtered.isNotEmpty) {
               BoxShadow(color: Colors.black12, blurRadius: 20),
             ],
           ),
-          child: Row(
-            children: [
+          child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
 
-              /// LEFT SIDE
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Card Balance",
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
+            /// CARD INFO ROW
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
 
-                  GestureDetector(
-                    onTap: () {
-                      if (loading) return;
-                      setState(() {
-                        showBalance = !showBalance;
-                      });
-                    },
-                    child: loading
-                        ? const Text(
-                            "Loading...",
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        : Text(
-                            showBalance
-                                ? "₹ ${balance.toStringAsFixed(2)}"
-                                : "₹ ••••••",
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
+                Row(
+                  children: [
+                    getCardLogo(),
+                    const SizedBox(width: 10),
+
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          maskedCardNumber,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                           ),
-                  ),
-                ],
-              ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
 
-              const Spacer(),
-
-              /// RIGHT BUTTON
-              GestureDetector(
-                onTap: () {
-                  final dashboard =
-                      context.findAncestorStateOfType<DashboardScreenState>();
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AddMoneyScreen(
-                        regId: widget.regId,
-                        fullName: dashboard?.widget.fullName ?? "",
-                        mobile: dashboard?.widget.mobile ?? "",
-                        upiId: dashboard?.widget.upiId ?? "",
-                        walletStatus: dashboard?.walletStatus ?? "active",
-                        aadhaarVerified: dashboard?.widget.aadhaarVerified ?? 1,
-                        panVerified: dashboard?.widget.panVerified ?? 1,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      "VALID THRU",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey,
                       ),
                     ),
-                  ).then((_) => _loadBalance());
-                },
-
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8ECFF),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.add,
-                        color: Color(0xFF4C6EF5),
-                        size: 18,
+                    const SizedBox(height: 2),
+                    Text(
+                      cardExpiry.isEmpty ? "--/--" : cardExpiry,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
-                      SizedBox(width: 4),
-                      Text(
-                        "Add Money",
-                        style: TextStyle(
-                          color: Color(0xFF4C6EF5),
-                          fontWeight: FontWeight.w600,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            /// BALANCE ROW
+            Row(
+              children: [
+
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Card Balance",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                    const SizedBox(height: 8),
+
+                    GestureDetector(
+                      onTap: () {
+                        if (loading) return;
+                        setState(() => showBalance = !showBalance);
+                      },
+                      child: loading
+                          ? const Text(
+                              "Loading...",
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : Text(
+                              showBalance
+                                  ? "₹ ${balance.toStringAsFixed(2)}"
+                                  : "₹ ••••••",
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+
+                const Spacer(),
+
+                GestureDetector(
+                  onTap: () {
+                    final dashboard =
+                        context.findAncestorStateOfType<DashboardScreenState>();
+
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AddMoneyScreen(
+                          regId: widget.regId,
+                          fullName: dashboard?.widget.fullName ?? "",
+                          mobile: dashboard?.widget.mobile ?? "",
+                          upiId: dashboard?.widget.upiId ?? "",
+                          walletStatus: dashboard?.walletStatus ?? "active",
+                          aadhaarVerified: dashboard?.widget.aadhaarVerified ?? 1,
+                          panVerified: dashboard?.widget.panVerified ?? 1,
                         ),
                       ),
-                    ],
+                    ).then((_) => _loadBalance());
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8ECFF),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.add, color: Color(0xFF4C6EF5), size: 18),
+                        SizedBox(width: 4),
+                        Text(
+                          "Add Money",
+                          style: TextStyle(
+                            color: Color(0xFF4C6EF5),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
+        ),
+
         ),
 
         // ===== CARD CENTER SECTION =====
@@ -5059,7 +5181,7 @@ if (filtered.isNotEmpty) {
 
                   AnimatedOpacity(
                     opacity: showFlipHint ? 1 : 0,
-                    duration: const Duration(milliseconds: 1000),
+                    duration: const Duration(milliseconds: 5000),
                     child: const Text(
                       "Tap card to flip",
                       style: TextStyle(
@@ -5104,8 +5226,25 @@ if (filtered.isNotEmpty) {
                       _CardActionButton(
                         icon: Icons.settings_outlined,
                         label: "Settings",
-                        onTap: () {
-                          // TODO: Open Card Settings Screen
+                        onTap: () async {
+
+                          final updated = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CardCentreScreen(
+                                regId: widget.regId,
+                                maskedNumber: maskedCardNumber,
+                              ),
+                            ),
+                          );
+
+                          if (updated == true && mounted) {
+                            final dashboard =
+                                context.findAncestorStateOfType<DashboardScreenState>();
+
+                            await dashboard?.refreshStudentState();
+                          }
+
                         },
                       ),
                     ],
@@ -5811,7 +5950,7 @@ class _CardPinSectionState extends State<_CardPinSection> {
                   loading
                       ? "Checking..."
                       : pinSet
-                          ? "Card PIN is set"
+                          ? "Manage Your Card Security PIN"
                           : "Set your card PIN",
                   style: TextStyle(
                     color: Colors.grey.shade600,
@@ -5849,7 +5988,7 @@ class _CardPinSectionState extends State<_CardPinSection> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                pinSet ? "Change" : "Set",
+                pinSet ? "Manage" : "Set",
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,

@@ -46,6 +46,10 @@ void initState() {
   super.initState();
 
   _tabController = TabController(length: 2, vsync: this);
+  _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
+
 
   if (widget.initialTab == "card") {
     _tabController.index = 1;
@@ -289,54 +293,103 @@ List<dynamic> temp = List.from(
 }
 
   Widget _filterChip(String label, VoidCallback onTap,
-      {bool isActive = false}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: isActive ? Colors.blue.shade50 : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isActive ? Colors.blue : Colors.grey.shade400,
+    {bool isActive = false}) {
+  return InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(22),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+      decoration: BoxDecoration(
+        color: isActive
+            ? const Color(0xFFE8ECFF)   // active bg
+            : Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 8,
           ),
-        ),
-        child: Row(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isActive ? Colors.blue : Colors.black,
-              ),
-            ),
-            const SizedBox(width: 6),
-            const Icon(Icons.keyboard_arrow_down, size: 18),
-          ],
-        ),
+        ],
       ),
-    );
-  }
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: isActive
+                  ? const Color(0xFF4C6EF5)
+                  : Colors.black87,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Icon(
+            Icons.keyboard_arrow_down,
+            size: 18,
+            color: isActive
+                ? const Color(0xFF4C6EF5)
+                : Colors.black54,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 
   // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
-      appBar: AppBar(
-        title: const Text("Transactions"),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: "Wallet"),
-            Tab(text: "Card"),
+     appBar: AppBar(
+      title: const Text("Transactions"),
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black,
+      elevation: 0,
+    ),
+
+      body: Column(
+   children: [
+    Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 10),
           ],
         ),
+        child: Material(
+          color: Colors.transparent,
+          child: SizedBox(
+            height: 46,
+            child: TabBar(
+              controller: _tabController,
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelPadding: EdgeInsets.zero,
+              indicator: BoxDecoration(
+                color: const Color(0xFF4C6EF5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.black54,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(child: Center(child: Text("Wallet"))),
+                Tab(child: Center(child: Text("Card"))),
+              ],
+            ),
+          ),
+        ),
       ),
-      body: TabBarView(
+    ),
+
+    Expanded(
+      child: TabBarView(
         controller: _tabController,
         children: [
           Column(
@@ -394,7 +447,11 @@ List<dynamic> temp = List.from(
 
         ],
       ),
+    ),
+   ]
+      ),
     );
+    
   }
 
   // ================= TRANSACTION LIST =================
@@ -503,27 +560,39 @@ List<dynamic> temp = List.from(
 
                     /// CLEAR BUTTON
                     Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(22),
+                      onTap: () {
+                        setState(() {
+                          fromMonth = null;
+                          toMonth = null;
+                        });
+
+                        _applyFilters(isWallet: _tabController.index == 0);
+                        Navigator.pop(context);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 8),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          "Clear",
+                          style: TextStyle(
+                            color: Color(0xFF4C6EF5),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
                           ),
                         ),
-                        onPressed: () {
-                          setState(() {
-                            fromMonth = null;
-                            toMonth = null;
-                          });
-
-                          _applyFilters(
-                            isWallet: _tabController.index == 0,
-                          );
-
-                          Navigator.pop(context);
-                        },
-                        child: const Text("Clear"),
                       ),
                     ),
+                  ),
+
 
                     const SizedBox(width: 12),
 
@@ -628,26 +697,39 @@ List<dynamic> temp = List.from(
 
                     /// CLEAR BUTTON
                     Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(22),
+                      onTap: () {
+                        setState(() {
+                          fromMonth = null;
+                          toMonth = null;
+                        });
+
+                        _applyFilters(isWallet: _tabController.index == 0);
+                        Navigator.pop(context);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 8),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          "Clear",
+                          style: TextStyle(
+                            color: Color(0xFF4C6EF5),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
                           ),
                         ),
-                        onPressed: () {
-                          setState(() {
-                            statusFilter = "All";
-                          });
-
-                          _applyFilters(
-                            isWallet: _tabController.index == 0,
-                          );
-
-                          Navigator.pop(context);
-                        },
-                        child: const Text("Clear"),
                       ),
                     ),
+                  ),
+
 
                     const SizedBox(width: 12),
 

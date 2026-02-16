@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../screens/dashboard_screen.dart';
+import 'dart:async';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -13,16 +14,39 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   List<dynamic> notifications = [];
   List<dynamic> filtered = [];
-
   bool loading = true;
+  dynamic _pendingDelete;
+  int? _pendingDeleteIndex;
+  Timer? _deleteTimer;
+  List<dynamic>? _pendingClearAll;
+  Timer? _clearAllTimer;
+  bool showSwipeHint = false;
+  bool _hintShownOnce = false;
+
 
   final TextEditingController searchController = TextEditingController();
 
-  @override
+ @override
   void initState() {
     super.initState();
     loadNotifications();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_hintShownOnce) {
+        _triggerSwipeHint();
+        _hintShownOnce = true;
+      }
+    });
   }
+
+  void _triggerSwipeHint() {
+  setState(() => showSwipeHint = true);
+
+  Future.delayed(const Duration(seconds: 3), () {
+    if (!mounted) return;
+    setState(() => showSwipeHint = false);
+  });
+}
 
   /// ================= LOAD =================
   Future loadNotifications() async {
@@ -50,10 +74,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 }
 
   // Message
-  void showDashboardMessage(String msg) {
-  final overlay = Overlay.of(context);
+  void showUndoDeleteBanner() {
 
-  final entry = OverlayEntry(
+  final overlay = Overlay.of(context, rootOverlay: true);
+
+  late OverlayEntry entry;
+
+  entry = OverlayEntry(
     builder: (_) => Positioned(
       top: 80,
       left: 20,
@@ -61,10 +88,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       child: Material(
         color: Colors.transparent,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: const Color(0xFF4C6EF5),
             borderRadius: BorderRadius.circular(14),
@@ -73,15 +97,137 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ],
           ),
           child: Row(
-            children: const [
-              Icon(Icons.check_circle, color: Colors.white),
-              SizedBox(width: 10),
-              Expanded(
+            children: [
+
+              const Icon(Icons.delete, color: Colors.white),
+
+              const SizedBox(width: 10),
+
+              const Expanded(
                 child: Text(
                   "Notification removed",
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              GestureDetector(
+              onTap: () {
+                _deleteTimer?.cancel();
+
+                setState(() {
+                  if (_pendingDelete != null && _pendingDeleteIndex != null) {
+                    notifications.insert(_pendingDeleteIndex!, _pendingDelete);
+                    filtered = List.from(notifications);
+                  }
+                });
+
+                entry.remove();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  "UNDO",
+                  style: TextStyle(
+                    color: Color(0xFF4C6EF5),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            )
+
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  overlay.insert(entry);
+
+  /// AUTO DELETE AFTER 3 SEC
+  _deleteTimer = Timer(const Duration(seconds: 3), () async {
+    entry.remove();
+
+    if (_pendingDelete != null) {
+      await ApiService.deleteNotification(_pendingDelete["id"]);
+    }
+  });
+}
+
+void _showUndoClearAllBanner() {
+
+  final overlay = Overlay.of(context, rootOverlay: true);
+
+  late OverlayEntry entry;
+
+  entry = OverlayEntry(
+    builder: (_) => Positioned(
+      top: 80,
+      left: 20,
+      right: 20,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF4C6EF5),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 10),
+            ],
+          ),
+          child: Row(
+            children: [
+
+              const Icon(Icons.delete_sweep, color: Colors.white),
+              const SizedBox(width: 10),
+
+              const Expanded(
+                child: Text(
+                  "All notifications cleared",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              GestureDetector(
+                onTap: () {
+                  _clearAllTimer?.cancel();
+
+                  setState(() {
+                    if (_pendingClearAll != null) {
+                      notifications = List.from(_pendingClearAll!);
+                      filtered = List.from(notifications);
+                    }
+                  });
+
+                  entry.remove();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    "UNDO",
+                    style: TextStyle(
+                      color: Color(0xFF4C6EF5),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),
@@ -94,10 +240,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   overlay.insert(entry);
 
-  Future.delayed(const Duration(seconds: 2), () {
+  /// delayed delete
+  _clearAllTimer = Timer(const Duration(seconds: 3), () async {
     entry.remove();
+
+    if (_pendingClearAll != null) {
+      final regId = ApiService.currentUserRegId;
+      if (regId != null) {
+        await ApiService.deleteAllNotifications(regId);
+      }
+    }
   });
 }
+
 
   /// ================= SEARCH =================
   void onSearch(String q) {
@@ -161,6 +316,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           "Notifications",
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
+        actions: [
+          if (!loading && notifications.isNotEmpty)
+            TextButton(
+              onPressed: _clearAllNotifications,
+              child: const Text(
+                "Clear all",
+                style: TextStyle(
+                  color: Color(0xFF4C6EF5),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
+
       ),
 
       body: loading
@@ -168,7 +337,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           : Column(
               children: [
 
-                /// 🔎 SEARCH BAR
+                /// SEARCH BAR
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: TextField(
@@ -190,15 +359,57 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
 
                 /// LIST
+                /// Swipe hint
+                AnimatedOpacity(
+                  opacity: showSwipeHint ? 1 : 0,
+                  duration: const Duration(milliseconds: 600),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.swipe_left, size: 16, color: Colors.grey),
+                        SizedBox(width: 6),
+                        Text(
+                          "Swipe left to remove",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
                 Expanded(
                   child: filtered.isEmpty
                       ? _emptyView()
                       : _listView(),
                 ),
+
               ],
             ),
     );
   }
+void _clearAllNotifications() async {
+
+  _pendingClearAll = List.from(notifications);
+
+  setState(() {
+    notifications.clear();
+    filtered.clear();
+  });
+
+  final dashboard =
+      context.findAncestorStateOfType<DashboardScreenState>();
+
+  await dashboard?.loadUnreadCount();
+  await dashboard?.loadUnrevealedRewardsCount();
+
+  _showUndoClearAllBanner();
+}
 
   /// ================= EMPTY =================
   Widget _emptyView() {
@@ -305,24 +516,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           child: const Icon(Icons.delete, color: Colors.white),
         ),
 
-        onDismissed: (_) async {
+       onDismissed: (_) async {
+      _pendingDelete = n;
+      _pendingDeleteIndex = notifications.indexWhere((e) => e["id"] == n["id"]);
 
-          final success =
-              await ApiService.deleteNotification(n["id"]);
+      setState(() {
+        notifications.removeWhere((e) => e["id"] == n["id"]);
+        filtered.removeWhere((e) => e["id"] == n["id"]);
+      });
 
-         if (success) {
-          await loadNotifications();
-          final dashboard =
-              context.findAncestorStateOfType<DashboardScreenState>();
+      final dashboard =
+          context.findAncestorStateOfType<DashboardScreenState>();
 
-          await dashboard?.loadUnreadCount();
-          await dashboard?.loadUnrevealedRewardsCount();
-          
+      await dashboard?.loadUnreadCount();
+      await dashboard?.loadUnrevealedRewardsCount();
 
-          showDashboardMessage("Notification removed");
-        }
+      showUndoDeleteBanner();
+    },
 
-        },
+
 
         child: InkWell(
           borderRadius: BorderRadius.circular(16),

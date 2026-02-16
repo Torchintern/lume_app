@@ -242,7 +242,7 @@ def upload_profile_image():
 
     conn = get_db_connection()
     c = conn.cursor()
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
 
     c.execute("""
         UPDATE registered_students
@@ -253,7 +253,7 @@ def upload_profile_image():
     c.close()
     conn.close()
 
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
     return {"image_url": image_url}, 200
 
 
@@ -3639,10 +3639,44 @@ def get_pending_drag_rewards(reg_id):
 # ========== CARD ================
 
 # ==== Helpers ======
+def luhn_checksum(card_number: str) -> int:
+    digits = [int(d) for d in card_number]
+    odd = digits[-1::-2]
+    even = digits[-2::-2]
+
+    total = sum(odd)
+    for d in even:
+        total += sum(divmod(d*2, 10))
+
+    return total % 10
+
+
 def generate_card_number():
-    prefix = "4"
-    remaining = "".join(str(random.randint(0,9)) for _ in range(15))
-    return prefix + remaining
+    # RuPay BIN ranges
+    rupay_bins = [
+        "508500",
+        "508600",
+        "508700",
+        "353000",
+        "356000",
+        "607000",
+        "652100",
+        "652200",
+        "810000",
+        "820000"
+    ]
+
+    prefix = random.choice(rupay_bins)
+
+    # generate remaining digits except check digit
+    partial = prefix + "".join(str(random.randint(0, 9)) for _ in range(9))
+
+    # find valid Luhn check digit
+    for i in range(10):
+        candidate = partial + str(i)
+        if luhn_checksum(candidate) == 0:
+            return candidate
+
 
 def generate_cvv():
     return str(random.randint(100,999))
@@ -3788,10 +3822,17 @@ def get_lume_card(reg_id):
 
     if not card:
         return {"card_exists": False}
+    
+    card_network = "RUPAY"
 
     return {
         "card_exists": True,
-        "card": card
+        "card": {
+            "last4": card["card_last4"],
+            "expiry": f'{int(card["expiry_month"]):02d}/{str(card["expiry_year"])[-2:]}',
+            "network": card_network,
+            "is_locked": card["is_locked"] == 1
+        }
     }
  # ==== LOCK CARD ======
 @app.route("/api/lume-card/lock", methods=["POST"])
@@ -4075,13 +4116,28 @@ def card_payment():
             return {"message": "INSUFFICIENT_BALANCE"}, 400
 
         # ================= DEDUCT BALANCE =================
-        new_balance = float(user["wallet_balance"]) - amount
+        c.execute("""
+            SELECT balance
+            FROM wallets
+            WHERE registered_student_id=%s
+            FOR UPDATE
+        """, (reg_id,))
+        user = c.fetchone()
+
+        if not user:
+            return {"message": "USER_NOT_FOUND"}, 404
+
+        if float(user["balance"]) < amount:
+            return {"message": "INSUFFICIENT_BALANCE"}, 400
+
+        new_balance = float(user["balance"]) - amount
 
         c.execute("""
-            UPDATE registered_students
-            SET wallet_balance=%s
-            WHERE id=%s
+            UPDATE wallets
+            SET balance=%s
+            WHERE registered_student_id=%s
         """, (new_balance, reg_id))
+
 
         # ================= INSERT TRANSACTION =================
         c.execute("""
@@ -4134,6 +4190,96 @@ def card_payment():
     finally:
         c.close()
         conn.close()
+        
+# ================ Tap & Pay =================        
+@app.route("/api/lume-card/tap-pay/<int:reg_id>", methods=["GET"])
+def get_tap_pay_status(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT tap_pay_enabled
+        FROM lume_cards
+        WHERE reg_id=%s
+    """, (reg_id,))
+
+    row = c.fetchone()
+    c.close()
+    conn.close()
+
+    if not row:
+        return {"enabled": False}, 200
+
+    return {"enabled": row["tap_pay_enabled"] == 1}, 200
+
+@app.route("/api/lume-card/tap-pay/toggle", methods=["POST"])
+def toggle_tap_pay():
+
+    d = request.json
+    reg_id = d.get("reg_id")
+    enabled = d.get("enabled")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        UPDATE lume_cards
+        SET tap_pay_enabled=%s
+        WHERE reg_id=%s
+    """, (1 if enabled else 0, reg_id))
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"message": "TAP_PAY_UPDATED"}, 200
+
+
+# ================ NCMC  ===================
+@app.route("/api/lume-card/ncmc/<int:reg_id>", methods=["GET"])
+def get_ncmc_status(reg_id):
+
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT ncmc_enabled
+        FROM lume_cards
+        WHERE reg_id=%s
+    """, (reg_id,))
+
+    row = c.fetchone()
+    c.close()
+    conn.close()
+
+    if not row:
+        return {"enabled": False}, 200
+
+    return {"enabled": row["ncmc_enabled"] == 1}, 200
+
+@app.route("/api/lume-card/ncmc/toggle", methods=["POST"])
+def toggle_ncmc():
+
+    d = request.json
+    reg_id = d.get("reg_id")
+    enabled = d.get("enabled")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    c.execute("""
+        UPDATE lume_cards
+        SET ncmc_enabled=%s
+        WHERE reg_id=%s
+    """, (1 if enabled else 0, reg_id))
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"message": "NCMC_UPDATED"}, 200
+
 
 #========================= RUN=========================
 """if __name__ == "__main__":

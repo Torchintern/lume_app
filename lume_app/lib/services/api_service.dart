@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = "http://192.168.0.3:5000/api";
+  static const String baseUrl = "http://192.168.0.4:5000/api";
   // "http://10.0.2.2:5000/api"
   static const Map<String, String> headers = {
     "Content-Type": "application/json",
@@ -557,6 +557,15 @@ static Future<bool> deleteNotification(int id) async {
     print("DELETE NOTIFICATION ERROR: $e");
     return false;
   }
+}
+
+static Future<bool> deleteAllNotifications(int regId) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/delete_all_notifications.php"),
+    body: {"reg_id": regId.toString()},
+  );
+
+  return res.statusCode == 200;
 }
 
 
@@ -1173,24 +1182,33 @@ static Future<Map<String, dynamic>> getLumeCard(int regId) async {
       headers: headers,
     );
 
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
-      return {
-      "card_exists": data["card_exists"] ?? false,
-      "last4": data["card"]?["card_last4"],
-      "expiry_month": data["card"]?["expiry_month"],
-      "expiry_year": data["card"]?["expiry_year"],
-      "is_locked": data["card"]?["is_locked"] ?? false,
-      "is_blocked": data["card"]?["is_blocked"] ?? false,
-    };
-
+    if (res.statusCode != 200) {
+      return {"card_exists": false};
     }
 
-    return {"card_exists": false};
-  } catch (_) {
+    final data = jsonDecode(res.body);
+
+    if (data["card_exists"] != true) {
+      return {"card_exists": false};
+    }
+
+    final card = data["card"];
+
+    return {
+      "card_exists": true,
+      "card": {
+        "last4": card["last4"],
+        "expiry": card["expiry"],
+        "network": card["network"],
+        "is_locked": card["is_locked"] ?? false,
+      }
+    };
+
+  } catch (e) {
     return {"card_exists": false};
   }
 }
+
 
 // ================= LUME CARD LOCK / UNLOCK =================
 static Future<bool> toggleLumeCardLock(int regId) async {
@@ -1299,6 +1317,88 @@ static Future<String?> getCardLast4(int regId) async {
 }
 
 
+// TAP & PAY
+// ================= TAP & PAY =================
+static Future<bool> getTapPayStatus(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/lume-card/tap-pay/$regId"),
+    headers: headers,
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body)["enabled"] == true;
+  }
+  return false;
+}
+
+
+static Future<void> toggleTapPay(int regId, bool enabled) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/lume-card/tap-pay/toggle"),
+    headers: headers,
+    body: jsonEncode({
+      "reg_id": regId,
+      "enabled": enabled,
+    }),
+  );
+
+  if (res.statusCode != 200) {
+    throw Exception("Failed to update Tap & Pay");
+  }
+}
+
+// ================= NCMC =================
+static Future<bool> getNcmcStatus(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/lume-card/ncmc/$regId"),
+    headers: headers,
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body)["enabled"] == true;
+  }
+  return false;
+}
+
+static Future<void> toggleNcmc(int regId, bool enabled) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/lume-card/ncmc/toggle"),
+    headers: headers,
+    body: jsonEncode({
+      "reg_id": regId,
+      "enabled": enabled,
+    }),
+  );
+
+  if (res.statusCode != 200) {
+    throw Exception("Failed to update NCMC");
+  }
+}
+
+
+// ================= CREATE CARD FEATURE NOTIFICATION =================
+static Future<void> createCardFeatureNotification({
+  required int regId,
+  required String title,
+  required String body,
+}) async {
+  try {
+    await http.post(
+      Uri.parse("$baseUrl/notifications/create"),
+      headers: headers,
+      body: jsonEncode({
+        "reg_id": regId,
+        "title": title,
+        "body": body,
+        "type": "card_security",
+      }),
+    );
+
+    // VERY IMPORTANT -> refresh badge count
+    await getUnreadNotificationCount(regId);
+
+  } catch (_) {}
+}
 
 
 

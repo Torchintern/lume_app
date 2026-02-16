@@ -233,48 +233,82 @@ class _Keypad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
     Widget key(String t, {VoidCallback? onTap}) {
-      return GestureDetector(
-        onTap: onTap ?? () => onDigit(t),
-        child: SizedBox(
-          width: 100,
-          height: 60,
-          child: Center(
-            child: Text(
-              t,
-              style: const TextStyle(
-                fontSize: 26,
-                color: Colors.black,
+      final size = MediaQuery.of(context).size.width / 5.2;
+      final bool isBack = t == "<";
+
+      return Padding(
+        padding: const EdgeInsets.all(8),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap ?? () => onDigit(t),
+            child: Container(
+              width: size,
+              height: size,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFE8ECFF),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.white,
+                    offset: Offset(-2, -2),
+                    blurRadius: 6,
+                  ),
+                  BoxShadow(
+                    color: Color(0x1A000000),
+                    offset: Offset(2, 2),
+                    blurRadius: 6,
+                  ),
+                ],
               ),
+              child: isBack
+                  ? const Icon(Icons.backspace_outlined,
+                      color: Color(0xFF4C6EF5))
+                  : Text(
+                      t,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
             ),
           ),
         ),
       );
     }
 
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: ["1", "2", "3"].map((e) => key(e)).toList(),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: ["4", "5", "6"].map((e) => key(e)).toList(),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: ["7", "8", "9"].map((e) => key(e)).toList(),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            key("."),
-            key("0"),
-            key("<", onTap: onBackspace),
-          ],
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 10),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: ["1", "2", "3"].map((e) => key(e)).toList(),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: ["4", "5", "6"].map((e) => key(e)).toList(),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: ["7", "8", "9"].map((e) => key(e)).toList(),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              key("."),
+              key("0"),
+              key("<", onTap: onBackspace),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
+
