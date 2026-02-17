@@ -4482,6 +4482,80 @@ def replace_card():
         print("REPLACE ERROR:", e)
         return jsonify({"error": "SERVER_ERROR"}), 500
 
+@app.route("/api/lume-card/controls/<int:reg_id>", methods=["GET"])
+def get_card_controls(reg_id):
+    conn = get_db_connection()
+    c = conn.cursor(dictionary=True)
+
+    c.execute("""
+        SELECT pos_enabled, online_enabled, contactless_enabled, tokenised_enabled,
+               pos_limit, online_limit, contactless_limit, tokenised_limit
+        FROM lume_cards
+        WHERE reg_id=%s
+    """, (reg_id,))
+
+    card = c.fetchone()
+    c.close()
+    conn.close()
+
+    if not card:
+        return {"message": "CARD_NOT_FOUND"}, 404
+
+    return card, 200
+
+
+@app.route("/api/lume-card/controls/update", methods=["POST"])
+def update_card_controls():
+    d = request.json
+    reg_id = d["reg_id"]
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    # Require card PIN
+    c.execute("SELECT card_pin_hash FROM wallet_security WHERE reg_id=%s", (reg_id,))
+    pin = c.fetchone()
+    if not pin or not pin[0]:
+        return {"message": "CARD_PIN_REQUIRED"}, 403
+
+    # fallback existing limits if not provided
+    c.execute("""
+        SELECT pos_limit, online_limit, contactless_limit, tokenised_limit
+        FROM lume_cards WHERE reg_id=%s
+    """, (reg_id,))
+    limits = c.fetchone()
+
+    c.execute("""
+        UPDATE lume_cards SET
+            pos_enabled=%s,
+            online_enabled=%s,
+            contactless_enabled=%s,
+            tokenised_enabled=%s,
+            pos_limit=%s,
+            online_limit=%s,
+            contactless_limit=%s,
+            tokenised_limit=%s
+        WHERE reg_id=%s
+    """, (
+        d.get("pos_enabled", 0),
+        d.get("online_enabled", 0),
+        d.get("contactless_enabled", 0),
+        d.get("tokenised_enabled", 0),
+
+        d.get("pos_limit", limits[0]),
+        d.get("online_limit", limits[1]),
+        d.get("contactless_limit", limits[2]),
+        d.get("tokenised_limit", limits[3]),
+
+        reg_id
+    ))
+
+
+    conn.commit()
+    c.close()
+    conn.close()
+
+    return {"message": "UPDATED"}, 200
 
 
 #========================= RUN=========================

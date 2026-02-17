@@ -1432,5 +1432,67 @@ static Future<void> replaceCard(int regId) async {
   }
 }
 
+// ===== CARD CONTROLS =====
+static Future<Map<String, dynamic>> getCardControls(int regId) async {
+  final res = await http.get(
+    Uri.parse("$baseUrl/lume-card/controls/$regId"),
+  );
+
+  if (res.statusCode == 200) {
+    return jsonDecode(res.body);
+  }
+
+  return {
+    "pos_enabled": false,
+    "online_enabled": false,
+    "contactless_enabled": false,
+    "tokenised_enabled": false,
+  };
+}
+
+static Future<void> updateCardControls({
+  required int regId,
+
+  required bool posEnabled,
+  required int posLimit,
+
+  required bool onlineEnabled,
+  required int onlineLimit,
+
+  required bool contactlessEnabled,
+  required int contactlessLimit,
+
+  required bool tokenisedEnabled,
+  required int tokenisedLimit,
+}) async {
+
+  final res = await http.post(
+    Uri.parse("$baseUrl/lume-card/controls/update"),
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({
+      "reg_id": regId,
+
+      "pos_enabled": posEnabled ? 1 : 0,
+      "pos_limit": posLimit,
+
+      "online_enabled": onlineEnabled ? 1 : 0,
+      "online_limit": onlineLimit,
+
+      "contactless_enabled": contactlessEnabled ? 1 : 0,
+      "contactless_limit": contactlessLimit,
+
+      "tokenised_enabled": tokenisedEnabled ? 1 : 0,
+      "tokenised_limit": tokenisedLimit,
+    }),
+  );
+
+  if (res.statusCode != 200) {
+    throw Exception("FAILED_TO_UPDATE_CARD_CONTROLS");
+  }
+}
+
+
+
+
 
 }
