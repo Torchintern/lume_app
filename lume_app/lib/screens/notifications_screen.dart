@@ -15,9 +15,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List<dynamic> notifications = [];
   List<dynamic> filtered = [];
   bool loading = true;
-  dynamic _pendingDelete;
-  int? _pendingDeleteIndex;
-  Timer? _deleteTimer;
+  final Map<int, Timer> _deleteTimers = {};
+  final Map<int, dynamic> _pendingDeletes = {};
+  final Map<int, int> _pendingIndexes = {};
   List<dynamic>? _pendingClearAll;
   Timer? _clearAllTimer;
   bool showSwipeHint = false;
@@ -74,7 +74,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 }
 
   // Message
-  void showUndoDeleteBanner() {
+ void showUndoDeleteBanner(int id) {
 
   final overlay = Overlay.of(context, rootOverlay: true);
 
@@ -98,11 +98,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
           child: Row(
             children: [
-
               const Icon(Icons.delete, color: Colors.white),
-
               const SizedBox(width: 10),
-
               const Expanded(
                 child: Text(
                   "Notification removed",
@@ -114,36 +111,39 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
 
               GestureDetector(
-              onTap: () {
-                _deleteTimer?.cancel();
+                onTap: () {
+                  _deleteTimers[id]?.cancel();
 
-                setState(() {
-                  if (_pendingDelete != null && _pendingDeleteIndex != null) {
-                    notifications.insert(_pendingDeleteIndex!, _pendingDelete);
+                  setState(() {
+                    notifications.insert(
+                      _pendingIndexes[id]!,
+                      _pendingDeletes[id],
+                    );
                     filtered = List.from(notifications);
-                  }
-                });
+                  });
 
-                entry.remove();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  "UNDO",
-                  style: TextStyle(
-                    color: Color(0xFF4C6EF5),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    letterSpacing: 0.5,
+                  _pendingDeletes.remove(id);
+                  _pendingIndexes.remove(id);
+                  _deleteTimers.remove(id);
+
+                  entry.remove();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    "UNDO",
+                    style: TextStyle(
+                      color: Color(0xFF4C6EF5),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-              ),
-            )
-
+              )
             ],
           ),
         ),
@@ -153,15 +153,42 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   overlay.insert(entry);
 
-  /// AUTO DELETE AFTER 3 SEC
-  _deleteTimer = Timer(const Duration(seconds: 3), () async {
+ _deleteTimers[id] = Timer(const Duration(seconds: 3), () async {
+
     entry.remove();
 
-    if (_pendingDelete != null) {
-      await ApiService.deleteNotification(_pendingDelete["id"]);
+    final success = await ApiService.deleteNotification(id);
+
+    /// If delete failed → restore item
+    if (!success) {
+      if (!mounted) return;
+
+      setState(() {
+        notifications.insert(
+          _pendingIndexes[id]!,
+          _pendingDeletes[id],
+        );
+        filtered = List.from(notifications);
+      });
+
+      _pendingDeletes.remove(id);
+      _pendingIndexes.remove(id);
+      _deleteTimers.remove(id);
+      return;
     }
+
+    /// If success → refresh real server state
+    _pendingDeletes.remove(id);
+    _pendingIndexes.remove(id);
+    _deleteTimers.remove(id);
+
+    if (!mounted) return;
+    await loadNotifications();
   });
+
+
 }
+
 
 void _showUndoClearAllBanner() {
 
@@ -244,13 +271,15 @@ void _showUndoClearAllBanner() {
   _clearAllTimer = Timer(const Duration(seconds: 3), () async {
     entry.remove();
 
-    if (_pendingClearAll != null) {
-      final regId = ApiService.currentUserRegId;
-      if (regId != null) {
-        await ApiService.deleteAllNotifications(regId);
-      }
+    final regId = ApiService.currentUserRegId;
+    if (regId != null) {
+      await ApiService.deleteAllNotifications(regId);
+
+      if (!mounted) return;
+      await loadNotifications();
     }
   });
+
 }
 
 
@@ -517,22 +546,26 @@ void _clearAllNotifications() async {
         ),
 
        onDismissed: (_) async {
-      _pendingDelete = n;
-      _pendingDeleteIndex = notifications.indexWhere((e) => e["id"] == n["id"]);
+        final id = n["id"];
 
-      setState(() {
-        notifications.removeWhere((e) => e["id"] == n["id"]);
-        filtered.removeWhere((e) => e["id"] == n["id"]);
-      });
+        _pendingDeletes[id] = n;
+        _pendingIndexes[id] =
+            notifications.indexWhere((e) => e["id"] == id);
 
-      final dashboard =
-          context.findAncestorStateOfType<DashboardScreenState>();
+        setState(() {
+          notifications.removeWhere((e) => e["id"] == id);
+          filtered.removeWhere((e) => e["id"] == id);
+        });
 
-      await dashboard?.loadUnreadCount();
-      await dashboard?.loadUnrevealedRewardsCount();
+        final dashboard =
+            context.findAncestorStateOfType<DashboardScreenState>();
 
-      showUndoDeleteBanner();
-    },
+        await dashboard?.loadUnreadCount();
+        await dashboard?.loadUnrevealedRewardsCount();
+
+        showUndoDeleteBanner(id);
+      },
+
 
 
 

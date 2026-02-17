@@ -242,7 +242,7 @@ def upload_profile_image():
 
     conn = get_db_connection()
     c = conn.cursor()
-    image_url = f"http://192.168.0.4:5000/{path}"
+    image_url = f"http://192.168.0.3:5000/{path}"
 
     c.execute("""
         UPDATE registered_students
@@ -253,7 +253,7 @@ def upload_profile_image():
     c.close()
     conn.close()
 
-    image_url = f"http://192.168.0.4:5000/{path}"
+    image_url = f"http://192.168.0.3:5000/{path}"
     return {"image_url": image_url}, 200
 
 
@@ -1854,6 +1854,41 @@ def delete_notification(notif_id):
     conn.close()
 
     return {"message": "DELETED"}, 200
+
+# ================= CREATE CARD FEATURE NOTIFICATION =================
+@app.route("/api/notifications/create", methods=["POST"])
+def create_notification():
+    try:
+        data = request.get_json()
+
+        reg_id = data.get("reg_id")
+        title = data.get("title")
+        body = data.get("body")
+        notif_type = data.get("type", "general")
+
+        if not reg_id or not title or not body:
+            return jsonify({"error": "Missing fields"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO notifications
+            (reg_id, title, message, type, is_read, created_at)
+            VALUES (%s, %s, %s, %s, 0, NOW())
+        """, (reg_id, title, body, notif_type))
+
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"message": "Notification created"}), 200
+
+    except Exception as e:
+        print("NOTIFICATION ERROR:", e)
+        return jsonify({"error": "Server error"}), 500
+
 
 
 
@@ -4092,7 +4127,7 @@ def card_payment():
         # ================= CHECK CARD PIN LOCK =================
         c.execute("""
             SELECT card_pin_locked
-            FROM student_pins
+            FROM wallet_security
             WHERE reg_id=%s
         """, (reg_id,))
         pin_data = c.fetchone()
@@ -4279,6 +4314,120 @@ def toggle_ncmc():
     conn.close()
 
     return {"message": "NCMC_UPDATED"}, 200
+
+# ================= BLOCK LUME CARD =================
+@app.route("/api/lume-card/block", methods=["POST"])
+def block_lume_card():
+    try:
+        data = request.json
+        reg_id = data.get("reg_id")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            UPDATE lume_cards
+            SET 
+                is_blocked = 1,
+                is_locked = 1
+            WHERE reg_id = %s
+        """, (reg_id,))
+
+
+        conn.commit()
+
+        return jsonify({
+            "success": True,
+            "is_blocked": True
+        }), 200
+
+    except Exception as e:
+        print("BLOCK ERROR:", e)
+        return jsonify({"success": False}), 500
+
+# ============= Replace Card ===============
+@app.route("/api/lume-card/replace", methods=["POST"])
+def replace_card():
+    try:
+        data = request.get_json()
+        reg_id = data.get("reg_id")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        import random
+        from datetime import datetime
+
+        card_number = "531234" + "".join([str(random.randint(0,9)) for _ in range(10)])
+        last4 = card_number[-4:]
+        cvv = str(random.randint(100,999))
+        expiry_month = datetime.now().month
+        expiry_year = datetime.now().year + 5
+
+        cur.execute("""
+            UPDATE lume_cards
+            SET
+                card_number=%s,
+                card_last4=%s,
+                expiry_month=%s,
+                expiry_year=%s,
+                cvv=%s,
+                card_status='pending',
+                is_locked=1,
+                is_blocked=0,
+                tap_pay_enabled=0,
+                ncmc_enabled=0,
+                issued_at=NOW()
+            WHERE reg_id=%s
+        """, (card_number,last4,expiry_month,expiry_year,cvv,reg_id))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"message":"Replacement ordered"}),200
+
+    except Exception as e:
+        print("REPLACE ERROR:",e)
+        return jsonify({"error":"Server error"}),500
+
+# ============ Activate Card =================
+@app.route("/api/lume-card/activate", methods=["POST"])
+def activate_card():
+    try:
+        data = request.get_json()
+        reg_id = data.get("reg_id")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # debug check
+        cur.execute("SELECT card_status FROM lume_cards WHERE reg_id=%s", (reg_id,))
+        row = cur.fetchone()
+        print("BEFORE ACTIVATE:", row)
+
+        # ACTIVATE CARD
+        cur.execute("""
+            UPDATE lume_cards
+            SET card_status='active',
+                is_locked=0,
+                is_blocked=0
+            WHERE reg_id=%s
+        """, (reg_id,))
+
+        conn.commit()
+
+        print("ROWS UPDATED:", cur.rowcount)
+
+        cur.close()
+        conn.close()
+
+        return jsonify({"message": "Card activated"}), 200
+
+    except Exception as e:
+        print("ACTIVATE ERROR:", e)
+        return jsonify({"error": "Server error"}), 500
+
 
 
 #========================= RUN=========================

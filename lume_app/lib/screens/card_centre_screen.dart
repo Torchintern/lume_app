@@ -23,7 +23,7 @@ class _CardCentreScreenState extends State<CardCentreScreen> {
   bool isCardBlocked = false;
   bool loadingCardState = true;
 
-  bool get _cardDisabled => isCardLocked || isCardBlocked;
+  bool get _cardDisabled => isCardBlocked;
   bool loadingTapPay = true;
   bool loadingNcmc = true;
   bool _notificationChanged = false;
@@ -249,6 +249,376 @@ void _startLockFlow() {
   );
 }
 
+void _showBlockCardSheet() {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 30),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+
+            /// Drag indicator
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            /// Card Preview (matches dashboard card header)
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                children: [
+                  Image.asset(
+                    "assets/card/rupay.png",
+                    width: 50,
+                    height: 30,
+                  ),
+                  const SizedBox(width: 14),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Prepaid Card",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.maskedNumber,
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            /// Title
+            const Text(
+              "Block This Card?",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            /// Subtitle
+            Text(
+              "This will permanently deactivate your card for all offline and online transactions.\n\nIf you would like to use this card in future, we suggest locking it instead.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                height: 1.4,
+                fontSize: 14,
+              ),
+            ),
+
+            const SizedBox(height: 28),
+
+            /// BLOCK BUTTON
+            SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: isCardLocked
+                  ? null
+                  : () {
+                      Navigator.pop(context);
+                      _startLockFlow();
+                    },
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor:
+                    isCardLocked ? Colors.grey.shade200 : const Color(0xFFE8ECFF),
+                foregroundColor:
+                    isCardLocked ? Colors.grey : const Color(0xFF4C6EF5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text(
+                "Lock for Now",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+
+
+            const SizedBox(height: 12),
+
+            /// BLOCK BUTTON
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () async {
+                    final confirm = await _confirmBlockDialog();
+
+                    if (confirm == true) {
+                      Navigator.pop(context);
+                      _showBlockProcessingSheet();
+                    }
+                  },
+
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text(
+                  "Block Card",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+
+          ],
+        ),
+      );
+    },
+  );
+}
+
+void _showReplaceCardSheet() {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isDismissible: false,
+    enableDrag: false,
+    builder: (sheetContext) {
+
+      bool apiCalled = false;
+      bool done = false;
+
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+
+          if (!apiCalled) {
+            apiCalled = true;
+
+            Future.microtask(() async {
+              try {
+                await ApiService.replaceCard(widget.regId);
+
+                setModalState(() => done = true);
+
+                await ApiService.createCardFeatureNotification(
+                  regId: widget.regId,
+                  title: "Card Replacement Ordered",
+                  body: "Your new card will be issued shortly.",
+                );
+
+                _notificationChanged = true;
+
+                await Future.delayed(const Duration(seconds: 3));
+
+                if (Navigator.of(sheetContext).canPop()) {
+                  Navigator.of(sheetContext).pop();
+                  Navigator.pop(context, true);
+                }
+
+              } catch (e) {
+                Navigator.pop(sheetContext);
+              }
+            });
+          }
+
+          return Container(
+            padding: const EdgeInsets.fromLTRB(24, 30, 24, 34),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                const SizedBox(height: 20),
+
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  child: done
+                      ? Container(
+                          height: 72,
+                          width: 72,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF4C6EF5),
+                          ),
+                          child: const Icon(Icons.check, color: Colors.white, size: 36),
+                        )
+                      : const SizedBox(
+                          height: 72,
+                          width: 72,
+                          child: CircularProgressIndicator(strokeWidth: 4),
+                        ),
+                ),
+
+                const SizedBox(height: 24),
+
+                Text(
+                  done ? "Order Confirmed" : "Placing your order...",
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+
+                const SizedBox(height: 10),
+
+                const Text(
+                  "Your replacement card will be delivered soon.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+
+                const SizedBox(height: 24),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+
+void _showBlockProcessingSheet() {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isDismissible: false,
+    enableDrag: false,
+    builder: (sheetContext) {
+
+      bool apiCalled = false;
+      bool done = false;
+
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+
+          if (!apiCalled) {
+            apiCalled = true;
+
+            Future.microtask(() async {
+              try {
+                final blocked = await ApiService.blockCard(widget.regId);
+                if (!mounted) return;
+                setState(() => isCardBlocked = blocked);
+                setModalState(() => done = true);
+                await _loadCardState();
+                await _loadSwitches();
+                await ApiService.createCardFeatureNotification(
+                  regId: widget.regId,
+                  title: "Card Blocked",
+                  body: "Your card has been permanently blocked.",
+                );
+
+                _notificationChanged = true;
+
+                _showSecurityToast(true);
+
+                await Future.delayed(const Duration(seconds: 2));
+
+                if (Navigator.of(sheetContext).canPop()) {
+                  Navigator.of(sheetContext).pop();
+                }
+
+              } catch (e) {
+                if (Navigator.of(sheetContext).canPop()) {
+                  Navigator.of(sheetContext).pop();
+                }
+              }
+            });
+          }
+
+          return Container(
+            padding: const EdgeInsets.fromLTRB(24, 30, 24, 34),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                const SizedBox(height: 28),
+
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  child: done
+                      ? Container(
+                          height: 72,
+                          width: 72,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF4C6EF5),
+                          ),
+                          child: const Icon(Icons.block, color: Colors.white, size: 36),
+                        )
+                      : const SizedBox(
+                          height: 72,
+                          width: 72,
+                          child: CircularProgressIndicator(strokeWidth: 4),
+                        ),
+                ),
+
+                const SizedBox(height: 24),
+
+                Text(
+                  done
+                      ? "Your card has been blocked"
+                      : "Blocking your card...",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+
+                const SizedBox(height: 10),
+
+                Text(
+                  "This card can no longer be used for payments.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+
+
 void _showProcessingSheet({required bool locking}) {
 
   showModalBottomSheet(
@@ -449,6 +819,52 @@ void _showFeatureToast(String text, IconData icon) {
   Future.delayed(const Duration(seconds: 3), () => entry.remove());
 }
 
+Future<bool?> _confirmBlockDialog() {
+  return showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text(
+          "Block Card Permanently?",
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: const Text(
+          "This action cannot be undone. Your card will be permanently deactivated and cannot be used again.",
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        actions: [
+
+          /// Cancel button
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              "Cancel",
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+
+          /// Confirm button
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4C6EF5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Block Card"),
+          ),
+        ],
+      );
+    },
+  );
+}
+
 
 
   Widget tile({
@@ -528,7 +944,7 @@ void _showFeatureToast(String text, IconData icon) {
             margin: const EdgeInsets.fromLTRB(16, 18, 16, 10),
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isCardBlocked ? Colors.grey.shade200 : Colors.white,
               borderRadius: BorderRadius.circular(22),
               boxShadow: const [
                 BoxShadow(color: Colors.black12, blurRadius: 14),
@@ -626,10 +1042,10 @@ void _showFeatureToast(String text, IconData icon) {
                 tile(
                   icon: Icons.pin_outlined,
                   title: "Card PIN",
-                  onTap: () {
+                  onTap: isCardBlocked ? null : () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      MaterialPageRoute(  
                         builder: (_) => PinSettingsScreen(
                           regId: widget.regId,
                           initialTab: "card",
@@ -644,16 +1060,19 @@ void _showFeatureToast(String text, IconData icon) {
                 tile(
                     icon: isCardLocked ? Icons.lock_open : Icons.lock_outline,
                     title: isCardLocked ? "Unlock this card?" : "Lock this card?",
-                    onTap: loadingLockState ? null : _startLockFlow,
+                    onTap: (loadingLockState || isCardBlocked) ? null : _startLockFlow,
                   ),
+
 
                 divider(),
 
                 /// BLOCK
                 tile(
                   icon: Icons.block,
-                  title: "Block & replace card",
+                  title: isCardBlocked ? "Replace card" : "Block & replace card",
+                  onTap: isCardBlocked ? _showReplaceCardSheet : _showBlockCardSheet,
                 ),
+
                 divider(),
 
                 /// LIMITS

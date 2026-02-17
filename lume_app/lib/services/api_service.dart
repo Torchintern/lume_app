@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = "http://192.168.0.4:5000/api";
+  static const String baseUrl = "http://192.168.0.3:5000/api";
   // "http://10.0.2.2:5000/api"
   static const Map<String, String> headers = {
     "Content-Type": "application/json",
@@ -559,14 +559,14 @@ static Future<bool> deleteNotification(int id) async {
   }
 }
 
-static Future<bool> deleteAllNotifications(int regId) async {
-  final res = await http.post(
-    Uri.parse("$baseUrl/delete_all_notifications.php"),
-    body: {"reg_id": regId.toString()},
-  );
+static Future<void> deleteAllNotifications(int regId) async {
+  final list = await getAllNotifications(regId);
 
-  return res.statusCode == 200;
+  for (var n in list) {
+    await deleteNotification(n["id"]);
+  }
 }
+
 
 
 // ================= PIN SET =================
@@ -670,6 +670,10 @@ static Future<Map<String, bool>> getPinStatus(int regId) async {
     "card": false,
   };
 }
+
+
+
+
 
 // ====== wallet to UPI =============
 //static Future<void> walletToUpiPayment({
@@ -1393,11 +1397,50 @@ static Future<void> createCardFeatureNotification({
         "type": "card_security",
       }),
     );
-
-    // VERY IMPORTANT -> refresh badge count
     await getUnreadNotificationCount(regId);
 
   } catch (_) {}
+}
+
+// ================= BLOCK CARD =================
+static Future<bool> blockCard(int regId) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/lume-card/block"),
+    headers: headers,
+    body: jsonEncode({
+      "reg_id": regId,
+    }),
+  );
+
+  if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+    return data["is_blocked"] == true;
+  }
+  throw Exception("Failed to block card");
+}
+
+ // ========= Replace Card =============
+static Future<void> replaceCard(int regId) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/lume-card/replace"),
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({"reg_id": regId}),
+  );
+
+  if (res.statusCode != 200) {
+    throw Exception("Replace card failed");
+  }
+}
+// ======== Activate Card ===============
+static Future<bool> activateCard(int regId) async {
+  final res = await http.post(
+    Uri.parse("$baseUrl/api/lume-card/activate"),
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({"reg_id": regId}),
+  );
+
+  print("ACTIVATE RESPONSE: ${res.body}");
+  return res.statusCode == 200;
 }
 
 

@@ -4274,6 +4274,9 @@ class _CardViewState extends State<_CardView> with RouteAware {
   bool loadingCardTxns = true;
   bool isCardLocked = false;
   bool loadingLockState = true;
+  bool isCardBlocked = false;
+  bool isCardPending = false;
+
   String cardLast4 = "";
   String maskedCardNumber = "****";
   String cardType = "";
@@ -4678,9 +4681,13 @@ Future<void> _loadCardLockState() async {
       final network = c["network"] ?? "";
       final expiry = c["expiry"] ?? "";
 
-      setState(() {
-        isCardLocked = status["is_locked"] == true;
-        loadingLockState = false;
+     setState(() {
+      isCardLocked = status["is_locked"] == true;
+      isCardBlocked = status["is_blocked"] == true;
+      isCardPending = status["card_status"] == "pending";
+
+      loadingLockState = false;
+
 
         /// IMPORTANT VALUES FOR UI
         maskedCardNumber = last4.isEmpty ? "****" : "**** $last4";
@@ -4827,6 +4834,12 @@ if (filtered.isNotEmpty) {
         loading = false;
       });
     }
+  }
+
+  Future<void> _activateCard() async {
+    await ApiService.activateCard(widget.regId);
+    await _loadCardLockState();
+    setState(() {});
   }
 
 
@@ -4998,57 +5011,115 @@ Widget getCardLogo() {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            /// KYC WARNING
+            if (!widget.isKycCompleted)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Complete your KYC to get LUME Card",
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+
 
             /// CARD INFO ROW
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+            if (widget.isKycCompleted)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
 
-                Row(
-                  children: [
-                    getCardLogo(),
-                    const SizedBox(width: 10),
+                  Row(
+                    children: [
+                      getCardLogo(),
+                      const SizedBox(width: 10),
 
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          maskedCardNumber,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            maskedCardNumber,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
+
+                          const SizedBox(height: 4),
+
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isCardBlocked
+                                  ? Colors.red.shade50
+                                  : isCardPending
+                                      ? Colors.orange.shade50
+                                      : const Color(0xFFE8ECFF),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              isCardBlocked
+                                  ? "Blocked"
+                                  : isCardPending
+                                      ? "Awaiting Activation"
+                                      : "Active",
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isCardBlocked
+                                    ? Colors.red
+                                    : isCardPending
+                                        ? Colors.orange
+                                        : const Color(0xFF4C6EF5),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text(
+                        "VALID THRU",
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      "VALID THRU",
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey,
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      cardExpiry.isEmpty ? "--/--" : cardExpiry,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                      const SizedBox(height: 2),
+                      Text(
+                        cardExpiry.isEmpty ? "--/--" : cardExpiry,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                    ],
+                  ),
+                ],
+              ),
 
-            const SizedBox(height: 16),
 
+            if (widget.isKycCompleted) const SizedBox(height: 16),
             /// BALANCE ROW
             Row(
               children: [
@@ -5172,6 +5243,37 @@ Widget getCardLogo() {
             ),
           ),
         ),
+        if (isCardPending)
+        Container(
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8ECFF),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            children: [
+              const Text(
+                "Your replacement card is ready",
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                "Activate it to start using",
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                ),
+                onPressed: _activateCard,
+                child: const Text("Activate Card"),
+              )
+            ],
+          ),
+        ),
+
        const SizedBox(height: 18),
         widget.isKycCompleted
             ? Column(
@@ -5218,10 +5320,18 @@ Widget getCardLogo() {
                       ),
 
                       _CardActionButton(
-                          icon: isCardLocked ? Icons.lock : Icons.lock_open,
-                          label: isCardLocked ? "Unlock Card" : "Lock Card",
-                          onTap: _showLockBottomSheet,
-                        ),
+                        icon: (isCardBlocked || isCardPending)
+                            ? Icons.block
+                            : (isCardLocked ? Icons.lock : Icons.lock_open),
+                        label: isCardBlocked
+                            ? "Blocked"
+                            : isCardPending
+                                ? "Pending"
+                                : (isCardLocked ? "Unlock Card" : "Lock Card"),
+                        onTap: (isCardBlocked || isCardPending) ? () {} : _showLockBottomSheet,
+                        disabled: (isCardBlocked || isCardPending),
+                      ),
+
 
                       _CardActionButton(
                         icon: Icons.settings_outlined,
@@ -5484,12 +5594,15 @@ class _CardActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool disabled;
 
   const _CardActionButton({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.disabled = false,
   });
+
 
   @override
   Widget build(BuildContext context) {
@@ -5502,24 +5615,27 @@ class _CardActionButton extends StatelessWidget {
             height: 56,
             width: 56,
             decoration: BoxDecoration(
-              color: const Color(0xFFE8ECFF),
+              color: disabled ? Colors.grey.shade200 : const Color(0xFFE8ECFF),
               borderRadius: BorderRadius.circular(18),
             ),
             child: Icon(
               icon,
-              color: const Color(0xFF4C6EF5),
+              color: disabled ? Colors.grey : const Color(0xFF4C6EF5),
             ),
+
           ),
 
           const SizedBox(height: 6),
 
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
+              color: disabled ? Colors.grey : Colors.black,
             ),
           ),
+
         ],
       ),
     );
@@ -5545,6 +5661,8 @@ class _CardDetailsBottomSheetState
   bool loading = true;
   bool showCvvOnly = false;
   bool cardCopied = false;
+  bool isBlocked = false;
+  bool loadingStatus = true;
 
   String cardNumber = "";
   String expiry = "";
@@ -5562,6 +5680,7 @@ class _CardDetailsBottomSheetState
   void initState() {
     super.initState();
     _loadCardDetails();
+    _loadBlockStatus();
   }
 
   Future<void> _loadCardDetails() async {
@@ -5590,6 +5709,23 @@ class _CardDetailsBottomSheetState
       });
     }
   }
+
+  Future<void> _loadBlockStatus() async {
+  try {
+    final status = await ApiService.getCardStatus(widget.regId);
+
+    if (!mounted) return;
+
+    setState(() {
+      isBlocked = status["is_blocked"] == true;
+      loadingStatus = false;
+    });
+  } catch (_) {
+    if (!mounted) return;
+    setState(() => loadingStatus = false);
+  }
+}
+
 
   void copyCardNumber() async {
   await Clipboard.setData(ClipboardData(text: cardNumber));
@@ -5648,6 +5784,32 @@ class _CardDetailsBottomSheetState
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+
+                if (!loadingStatus && isBlocked)
+                Container(
+                  margin: const EdgeInsets.only(top: 14, bottom: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8ECFF),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.block, color: Color(0xFF4C6EF5)),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "This card is blocked",
+                          style: TextStyle(
+                            color: Color(0xFF4C6EF5),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
 
                 const SizedBox(height: 24),
 
