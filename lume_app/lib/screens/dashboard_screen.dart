@@ -4836,13 +4836,6 @@ if (filtered.isNotEmpty) {
     }
   }
 
-  Future<void> _activateCard() async {
-    await ApiService.activateCard(widget.regId);
-    await _loadCardLockState();
-    setState(() {});
-  }
-
-
 Widget getCardLogo() {
 
   String asset = "assets/card/default.png";
@@ -5210,8 +5203,7 @@ Widget getCardLogo() {
         ),
 
         // ===== CARD CENTER SECTION =====
-        const SizedBox(height: 8),
-
+        const SizedBox(height: 14),
         Align(
           alignment: Alignment.centerLeft,
           child: Padding(
@@ -5245,7 +5237,7 @@ Widget getCardLogo() {
         ),
         if (isCardPending)
         Container(
-          margin: const EdgeInsets.only(bottom: 18),
+         margin: const EdgeInsets.fromLTRB(0, 14, 0, 18),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: const Color(0xFFE8ECFF),
@@ -5259,7 +5251,7 @@ Widget getCardLogo() {
               ),
               const SizedBox(height: 6),
               const Text(
-                "Activate it to start using",
+                "Set your card PIN to activate it",
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
@@ -5267,12 +5259,30 @@ Widget getCardLogo() {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4C6EF5),
                 ),
-                onPressed: _activateCard,
-                child: const Text("Activate Card"),
+                onPressed: () async {
+                  final activated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PinSettingsScreen(
+                        regId: widget.regId,
+                        initialTab: "card",
+                        forceSetup: true,
+                      ),
+                    ),
+                  );
+
+                  /// reload card state after PIN set
+                  if (activated == true) {
+                    await _loadCardLockState();
+                    setState(() {});
+                  }
+                },
+                child: const Text("Set PIN & Activate"),
               )
             ],
           ),
         ),
+
 
        const SizedBox(height: 18),
         widget.isKycCompleted
@@ -5320,17 +5330,38 @@ Widget getCardLogo() {
                       ),
 
                       _CardActionButton(
-                        icon: (isCardBlocked || isCardPending)
-                            ? Icons.block
-                            : (isCardLocked ? Icons.lock : Icons.lock_open),
-                        label: isCardBlocked
-                            ? "Blocked"
-                            : isCardPending
-                                ? "Pending"
-                                : (isCardLocked ? "Unlock Card" : "Lock Card"),
-                        onTap: (isCardBlocked || isCardPending) ? () {} : _showLockBottomSheet,
-                        disabled: (isCardBlocked || isCardPending),
-                      ),
+                      icon: isCardPending
+                          ? Icons.lock_outline
+                          : isCardBlocked
+                              ? Icons.block
+                              : (isCardLocked ? Icons.lock : Icons.lock_open),
+                      label: isCardPending
+                          ? "Set PIN"
+                          : isCardBlocked
+                              ? "Blocked"
+                              : (isCardLocked ? "Unlock Card" : "Lock Card"),
+                      onTap: isCardPending
+                          ? () async {
+                              final activated = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PinSettingsScreen(
+                                    regId: widget.regId,
+                                    initialTab: "card",
+                                    forceSetup: true,
+                                  ),
+                                ),
+                              );
+
+                              if (activated == true) {
+                                await _loadCardLockState();
+                                setState(() {});
+                              }
+                            }
+                          : (isCardBlocked ? () {} : _showLockBottomSheet),
+                      disabled: isCardBlocked,
+                    ),
+
 
 
                       _CardActionButton(
@@ -5348,13 +5379,13 @@ Widget getCardLogo() {
                             ),
                           );
 
-                          if (updated == true && mounted) {
-                            final dashboard =
-                                context.findAncestorStateOfType<DashboardScreenState>();
+                          if (updated != null && mounted) {
+                          final dashboard =
+                              context.findAncestorStateOfType<DashboardScreenState>();
 
-                            await dashboard?.refreshStudentState();
-                          }
-
+                          await dashboard?.refreshStudentState();
+                          await _loadCardLockState();  
+                        }
                         },
                       ),
                     ],
@@ -6040,6 +6071,7 @@ class _CardPinSectionState extends State<_CardPinSection> {
 
   bool pinSet = false;
   bool loading = true;
+  bool cardPending = false;
 
   @override
   void initState() {
@@ -6048,20 +6080,28 @@ class _CardPinSectionState extends State<_CardPinSection> {
   }
 
   Future<void> _loadPinStatus() async {
-    try {
-      final res = await ApiService.getPinStatus(widget.regId);
+  try {
 
-      if (!mounted) return;
+    final pinRes = await ApiService.getPinStatus(widget.regId);
+    final cardStatus = await ApiService.getCardStatus(widget.regId);
 
-      setState(() {
-        pinSet = res["card"] == true;
-        loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => loading = false);
-    }
+    if (!mounted) return;
+
+    final bool pending = cardStatus["card_status"] == "pending";
+
+    setState(() {
+      cardPending = pending;
+      pinSet = pending ? false : (pinRes["card"] == true);
+
+      loading = false;
+    });
+
+  } catch (_) {
+    if (!mounted) return;
+    setState(() => loading = false);
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -6111,6 +6151,8 @@ class _CardPinSectionState extends State<_CardPinSection> {
                 Text(
                   loading
                       ? "Checking..."
+                      : cardPending
+                      ? "Set a new PIN to activate your card"
                       : pinSet
                           ? "Manage Your Card Security PIN"
                           : "Set your card PIN",
@@ -6128,15 +6170,23 @@ class _CardPinSectionState extends State<_CardPinSection> {
                 ? null
                 : () async {
 
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PinSettingsScreen(
-                          regId: widget.regId,
-                          initialTab: "card",
+                    final activated = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PinSettingsScreen(
+                            regId: widget.regId,
+                            initialTab: "card",
+                          ),
                         ),
-                      ),
-                    );
+                      );
+
+                      _loadPinStatus();
+
+                      if (activated == true) {
+                        final dashboard =
+                            context.findAncestorStateOfType<DashboardScreenState>();
+                        dashboard?.refreshStudentState();
+                      }
 
                     _loadPinStatus();
                   },
@@ -6150,7 +6200,7 @@ class _CardPinSectionState extends State<_CardPinSection> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                pinSet ? "Manage" : "Set",
+              cardPending ? "Activate" : (pinSet ? "Manage" : "Set"),
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,

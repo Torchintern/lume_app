@@ -1431,18 +1431,6 @@ static Future<void> replaceCard(int regId) async {
     throw Exception("Replace card failed");
   }
 }
-// ======== Activate Card ===============
-static Future<bool> activateCard(int regId) async {
-  final res = await http.post(
-    Uri.parse("$baseUrl/api/lume-card/activate"),
-    headers: {"Content-Type": "application/json"},
-    body: jsonEncode({"reg_id": regId}),
-  );
-
-  print("ACTIVATE RESPONSE: ${res.body}");
-  return res.statusCode == 200;
-}
-
 
 
 }

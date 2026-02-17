@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'pin_settings_screen.dart';
-
+import 'pin_verify_screen.dart';
 class CardCentreScreen extends StatefulWidget {
   final int regId;
   final String maskedNumber;
@@ -92,6 +92,24 @@ Future<void> _loadCardLockState() async {
     setState(() => loadingLockState = false);
   }
 }
+
+  Future<bool> _verifyCardSecurity() async {
+    FocusScope.of(context).unfocus();
+
+    final verified = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PinVerifyScreen(
+          regId: widget.regId,
+          type: "card",
+        ),
+      ),
+    );
+
+    await _loadSwitches(); 
+    return verified == true;
+  }
+
 
 
 Future<void> _toggleTapPay(bool value) async {
@@ -445,7 +463,8 @@ void _showReplaceCardSheet() {
 
                 if (Navigator.of(sheetContext).canPop()) {
                   Navigator.of(sheetContext).pop();
-                  Navigator.pop(context, true);
+                  Navigator.pop(context, "replaced");
+
                 }
 
               } catch (e) {
@@ -865,6 +884,98 @@ Future<bool?> _confirmBlockDialog() {
   );
 }
 
+Future<bool?> _confirmReplaceDialog() {
+  return showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+
+              /// ICON
+              Container(
+                height: 70,
+                width: 70,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8ECFF),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.credit_card,
+                  color: Color(0xFF4C6EF5),
+                  size: 36,
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              const Text(
+                "Replace this card?",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              const Text(
+                "You'll be Replaced with a New Lume Card.\nYou must set a new PIN to activate the New Lume card.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+
+              const SizedBox(height: 22),
+
+              Row(
+                children: [
+
+                  /// CANCEL
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: ElevatedButton.styleFrom(
+                        elevation: 0,
+                        backgroundColor: const Color(0xFFE8ECFF),
+                        foregroundColor: const Color(0xFF4C6EF5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text("Cancel"),
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  /// CONFIRM
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4C6EF5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text("Replace"),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
 
 
   Widget tile({
@@ -1011,8 +1122,19 @@ Future<bool?> _confirmBlockDialog() {
                       : Switch(
                         value: ncmcEnabled,
                         onChanged: (_cardDisabled || loadingNcmc)
-                            ? null
-                            : _toggleNcmc,
+                          ? null
+                          : (value) async {
+
+                              final verified = await _verifyCardSecurity();
+
+                              if (!verified) {
+                                setState(() {});
+                                return;
+                              }
+
+                              _toggleNcmc(value);
+                            },
+
                         activeColor: const Color(0xFF4C6EF5),
                       ),
                 ),
@@ -1031,8 +1153,19 @@ Future<bool?> _confirmBlockDialog() {
                       : Switch(
                         value: tapPayEnabled,
                         onChanged: (_cardDisabled || loadingTapPay)
-                            ? null
-                            : _toggleTapPay,
+                        ? null
+                        : (value) async {
+
+                            final verified = await _verifyCardSecurity();
+
+                            if (!verified) {
+                              setState(() {}); // restore UI
+                              return;
+                            }
+
+                            _toggleTapPay(value);
+                          },
+
                         activeColor: const Color(0xFF4C6EF5),
                       ),
                 ),
@@ -1068,10 +1201,20 @@ Future<bool?> _confirmBlockDialog() {
 
                 /// BLOCK
                 tile(
-                  icon: Icons.block,
-                  title: isCardBlocked ? "Replace card" : "Block & replace card",
-                  onTap: isCardBlocked ? _showReplaceCardSheet : _showBlockCardSheet,
-                ),
+                icon: Icons.block,
+                title: isCardBlocked ? "Replace card" : "Block & replace card",
+                onTap: () async {
+                  if (!isCardBlocked) {
+                    _showBlockCardSheet();
+                    return;
+                  }
+                  final confirm = await _confirmReplaceDialog();
+                  if (confirm == true) {
+                    _showReplaceCardSheet();
+                  }
+                },
+              ),
+
 
                 divider(),
 

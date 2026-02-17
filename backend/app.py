@@ -430,7 +430,7 @@ def aadhaar_kyc():
         # ---------------- ACTIVATE WALLET ----------------
         c.execute("""
             UPDATE wallets
-            SET status = 'active'
+            SET status = 'pending'
             WHERE registered_student_id = %s
         """, (d["registered_student_id"],))
 
@@ -1924,6 +1924,17 @@ def set_pin():
               card_pin_attempts=0,
               card_pin_locked=FALSE
         """, (reg_id, hashed, hashed))
+        # ===== ACTIVATE CARD AFTER FIRST PIN SET =====
+    if pin_type == "card":
+        c.execute("""
+            UPDATE lume_cards
+            SET card_status='active',
+                is_locked=0,
+                is_blocked=0
+            WHERE reg_id=%s
+            AND card_status='pending'
+        """, (reg_id,))
+
 
     conn.commit()
     return {"message": "PIN_SET_SUCCESS"}, 200
@@ -3819,7 +3830,7 @@ def create_card_for_user(reg_id, conn, c):
             cvv,
             card_status
         )
-        VALUES (%s,%s,%s,%s,%s,%s,'active')
+        VALUES (%s,%s,%s,%s,%s,%s,'pending')
     """, (
         reg_id,
         card_number,
@@ -3869,7 +3880,7 @@ def get_lume_card(reg_id):
             "is_locked": card["is_locked"] == 1
         }
     }
- # ==== LOCK CARD ======
+# ==== LOCK / UNLOCK CARD ======
 @app.route("/api/lume-card/lock", methods=["POST"])
 def lock_card():
     d = request.json
@@ -3885,7 +3896,12 @@ def lock_card():
     try:
         # ===== LOCK CARD ROW =====
         c.execute("""
-            SELECT id, is_locked, card_last4
+            SELECT 
+                id,
+                is_locked,
+                is_blocked,
+                card_status,
+                card_last4
             FROM lume_cards
             WHERE reg_id=%s
             FOR UPDATE
@@ -3895,7 +3911,15 @@ def lock_card():
 
         if not card:
             return {"message": "CARD_NOT_FOUND"}, 404
-        
+
+        # ===== BLOCK IF CARD BLOCKED =====
+        if card["is_blocked"] == 1:
+            return {"message": "CARD_BLOCKED"}, 403
+
+        # ===== BLOCK IF NOT ACTIVE (Pending cards cannot be locked) =====
+        if card["card_status"] != "active":
+            return {"message": "CARD_NOT_ACTIVE"}, 403
+
         # ===== REQUIRE CARD PIN =====
         c.execute("""
             SELECT card_pin_hash
@@ -3907,7 +3931,6 @@ def lock_card():
 
         if not pin or not pin["card_pin_hash"]:
             return {"message": "CARD_PIN_NOT_SET"}, 403
-
 
         # ===== TOGGLE LOCK =====
         new_state = 0 if card["is_locked"] == 1 else 1
@@ -3928,9 +3951,10 @@ def lock_card():
                 title,
                 message,
                 type,
-                is_read
+                is_read,
+                created_at
             )
-            VALUES (%s,%s,%s,%s,0)
+            VALUES (%s,%s,%s,%s,0,NOW())
         """, (
             reg_id,
             "Card Security Update",
@@ -4071,7 +4095,10 @@ def get_card_status(reg_id):
 
     try:
         c.execute("""
-            SELECT is_locked, is_blocked
+            SELECT
+                card_status,
+                is_locked,
+                is_blocked
             FROM lume_cards
             WHERE reg_id=%s
         """, (reg_id,))
@@ -4079,9 +4106,11 @@ def get_card_status(reg_id):
         card = c.fetchone()
 
         if not card:
-            return {"message": "CARD_NOT_FOUND"}, 404
+            return {"card_exists": False}, 200
 
         return {
+            "card_exists": True,
+            "card_status": card["card_status"], 
             "is_locked": card["is_locked"] == 1,
             "is_blocked": card["is_blocked"] == 1
         }, 200
@@ -4089,6 +4118,7 @@ def get_card_status(reg_id):
     finally:
         c.close()
         conn.close()
+
 # ======== Card Pay =======
 # ================= CARD PAYMENT =================
 @app.route("/api/card/pay", methods=["POST"])
@@ -4110,12 +4140,17 @@ def card_payment():
     try:
         # ================= CHECK CARD EXISTS =================
         c.execute("""
-            SELECT id, is_locked
+            SELECT id, is_locked, card_status
             FROM lume_cards
             WHERE reg_id=%s
             FOR UPDATE
+
         """, (reg_id,))
         card = c.fetchone()
+        # ===== BLOCK IF NOT ACTIVATED =====
+        if card["card_status"] != "active":
+            return {"message": "CARD_NOT_ACTIVATED"}, 403
+
 
         if not card:
             return {"message": "CARD_NOT_FOUND"}, 404
@@ -4248,6 +4283,7 @@ def get_tap_pay_status(reg_id):
 
     return {"enabled": row["tap_pay_enabled"] == 1}, 200
 
+
 @app.route("/api/lume-card/tap-pay/toggle", methods=["POST"])
 def toggle_tap_pay():
 
@@ -4256,8 +4292,17 @@ def toggle_tap_pay():
     enabled = d.get("enabled")
 
     conn = get_db_connection()
-    c = conn.cursor()
+    c = conn.cursor(dictionary=True)
+    c.execute("SELECT card_status FROM lume_cards WHERE reg_id=%s", (reg_id,))
+    st = c.fetchone()
 
+    if not st:
+        return {"message": "CARD_NOT_FOUND"}, 404
+
+    if st["card_status"] != "active":
+        return {"message": "CARD_NOT_ACTIVE"}, 403
+
+    # ===== UPDATE =====
     c.execute("""
         UPDATE lume_cards
         SET tap_pay_enabled=%s
@@ -4269,6 +4314,7 @@ def toggle_tap_pay():
     conn.close()
 
     return {"message": "TAP_PAY_UPDATED"}, 200
+
 
 
 # ================ NCMC  ===================
@@ -4293,16 +4339,25 @@ def get_ncmc_status(reg_id):
 
     return {"enabled": row["ncmc_enabled"] == 1}, 200
 
+
 @app.route("/api/lume-card/ncmc/toggle", methods=["POST"])
 def toggle_ncmc():
-
     d = request.json
     reg_id = d.get("reg_id")
     enabled = d.get("enabled")
 
     conn = get_db_connection()
-    c = conn.cursor()
+    c = conn.cursor(dictionary=True)
+    c.execute("SELECT card_status FROM lume_cards WHERE reg_id=%s", (reg_id,))
+    st = c.fetchone()
 
+    if not st:
+        return {"message": "CARD_NOT_FOUND"}, 404
+
+    if st["card_status"] != "active":
+        return {"message": "CARD_NOT_ACTIVE"}, 403
+
+    # ===== UPDATE =====
     c.execute("""
         UPDATE lume_cards
         SET ncmc_enabled=%s
@@ -4314,6 +4369,7 @@ def toggle_ncmc():
     conn.close()
 
     return {"message": "NCMC_UPDATED"}, 200
+
 
 # ================= BLOCK LUME CARD =================
 @app.route("/api/lume-card/block", methods=["POST"])
@@ -4352,18 +4408,23 @@ def replace_card():
         data = request.get_json()
         reg_id = data.get("reg_id")
 
+        if not reg_id:
+            return jsonify({"message": "INVALID_REQUEST"}), 400
+
         conn = get_db_connection()
-        cur = conn.cursor()
+        cur = conn.cursor(dictionary=True)
 
         import random
         from datetime import datetime
 
+        # ===== Generate new card =====
         card_number = "531234" + "".join([str(random.randint(0,9)) for _ in range(10)])
         last4 = card_number[-4:]
         cvv = str(random.randint(100,999))
         expiry_month = datetime.now().month
         expiry_year = datetime.now().year + 5
 
+        # ===== Replace card details =====
         cur.execute("""
             UPDATE lume_cards
             SET
@@ -4379,54 +4440,47 @@ def replace_card():
                 ncmc_enabled=0,
                 issued_at=NOW()
             WHERE reg_id=%s
-        """, (card_number,last4,expiry_month,expiry_year,cvv,reg_id))
+        """, (card_number, last4, expiry_month, expiry_year, cvv, reg_id))
 
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return jsonify({"message":"Replacement ordered"}),200
-
-    except Exception as e:
-        print("REPLACE ERROR:",e)
-        return jsonify({"error":"Server error"}),500
-
-# ============ Activate Card =================
-@app.route("/api/lume-card/activate", methods=["POST"])
-def activate_card():
-    try:
-        data = request.get_json()
-        reg_id = data.get("reg_id")
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        # debug check
-        cur.execute("SELECT card_status FROM lume_cards WHERE reg_id=%s", (reg_id,))
-        row = cur.fetchone()
-        print("BEFORE ACTIVATE:", row)
-
-        # ACTIVATE CARD
+        # VERY IMPORTANT — REMOVE OLD CARD PIN
         cur.execute("""
-            UPDATE lume_cards
-            SET card_status='active',
-                is_locked=0,
-                is_blocked=0
+            UPDATE wallet_security
+            SET
+                card_pin_hash=NULL,
+                card_pin_attempts=0,
+                card_pin_locked=0
             WHERE reg_id=%s
         """, (reg_id,))
 
+        # ===== Notification =====
+        cur.execute("""
+            INSERT INTO notifications (
+                reg_id,
+                title,
+                message,
+                type,
+                is_read
+            )
+            VALUES (%s,%s,%s,%s,0)
+        """, (
+            reg_id,
+            "Card Replaced",
+            f"Your new Lume card ending with {last4} is ready for activation.",
+            "card_security"
+        ))
+
         conn.commit()
-
-        print("ROWS UPDATED:", cur.rowcount)
-
         cur.close()
         conn.close()
 
-        return jsonify({"message": "Card activated"}), 200
+        return jsonify({
+            "message": "REPLACEMENT_SUCCESS",
+            "card_status": "pending"
+        }), 200
 
     except Exception as e:
-        print("ACTIVATE ERROR:", e)
-        return jsonify({"error": "Server error"}), 500
+        print("REPLACE ERROR:", e)
+        return jsonify({"error": "SERVER_ERROR"}), 500
 
 
 

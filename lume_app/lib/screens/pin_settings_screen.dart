@@ -40,6 +40,10 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
       vsync: this,
       initialIndex: widget.initialTab == "card" ? 1 : 0,
     );
+    if (widget.forceSetup && widget.initialTab == "card") {
+      _tabController.index = 1;
+    }
+
     _loadPinStatus();
   }
 
@@ -53,15 +57,26 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
   // ================= LOAD PIN STATUS =================
   Future<void> _loadPinStatus() async {
     try {
-      final status = await ApiService.getPinStatus(widget.regId);
+      final responses = await Future.wait([
+        ApiService.getPinStatus(widget.regId),
+        ApiService.getCardStatus(widget.regId),
+      ]);
+
+      final pin = responses[0];
+      final card = responses[1];
+
+      final bool cardPending = card["card_status"] != "active";
+
       if (!mounted) return;
 
       setState(() {
-      walletHasPin = status["wallet"] == true;
-      cardHasPin = status["card"] == true;
-      loading = false;
+        walletHasPin = pin["wallet"] == true;
+
+        cardHasPin = cardPending ? false : pin["card"] == true;
+
+        loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         walletHasPin = false;
@@ -70,6 +85,8 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
       });
     }
   }
+
+
 
   // ================= OTP FLOW =================
   Future<void> _openOtpSheet(bool isWallet) async {
@@ -250,10 +267,20 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
         elevation: 0,
         centerTitle: true,
         automaticallyImplyLeading: !widget.forceSetup,
-        title: Text(
-          widget.forceSetup ? "Set PIN" : "PIN Settings",
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
+        title: Column(
+        children: [
+          Text(
+            widget.forceSetup ? "Activate Card" : "PIN Settings",
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          if (widget.forceSetup)
+            const Text(
+              "Set your card PIN to continue",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+        ],
+      ),
+
       ),
 
         body: Column(
@@ -275,7 +302,11 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
         child: SizedBox(
           height: 46,
           child: TabBar(
-            controller: _tabController,
+          controller: _tabController,
+          physics: widget.forceSetup
+              ? const NeverScrollableScrollPhysics()
+              : null,
+
             indicatorSize: TabBarIndicatorSize.tab,
             labelPadding: EdgeInsets.zero,
             indicator: BoxDecoration(
@@ -299,21 +330,33 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
 
     Expanded(
       child: TabBarView(
-        controller: _tabController,
+      controller: _tabController,
+      physics: widget.forceSetup
+          ? const NeverScrollableScrollPhysics()
+          : null,
+
         children: [
 
             _PinFlow(
               hasPin: walletHasPin,
               otpVerified: walletOtpVerified,
+              forceSetup: widget.forceSetup,
+              typeLabel: "Wallet",
               onForgotPin: () => _openOtpSheet(true),
               onSave: (pin) => _savePin(true, pin),
             ),
+
+
             _PinFlow(
               hasPin: cardHasPin,
               otpVerified: cardOtpVerified,
+              forceSetup: widget.forceSetup,
+              typeLabel: "Card",
               onForgotPin: () => _openOtpSheet(false),
               onSave: (pin) => _savePin(false, pin),
             ),
+
+
           ],
         ),
       ),
@@ -328,14 +371,19 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
 class _PinFlow extends StatefulWidget {
   final bool hasPin;
   final bool otpVerified;
+  final bool forceSetup;
   final VoidCallback onForgotPin;
   final Function(String) onSave;
+  final String typeLabel; // "Wallet" or "Card"
+
 
   const _PinFlow({
     required this.hasPin,
     required this.otpVerified,
+    required this.forceSetup,
     required this.onForgotPin,
     required this.onSave,
+    required this.typeLabel,
   });
 
   @override
@@ -348,6 +396,9 @@ class _PinFlowState extends State<_PinFlow> {
   bool confirmStep = false;
 
   bool get canEnterPin => !widget.hasPin || widget.otpVerified;
+  bool get isFirstTime => !widget.hasPin;
+  bool get isChanging => widget.hasPin && widget.otpVerified;
+  bool get requiresOtp => widget.hasPin && !widget.otpVerified && !widget.forceSetup;
 
  @override
   Widget build(BuildContext context) {
@@ -373,7 +424,13 @@ class _PinFlowState extends State<_PinFlow> {
 
         Center(
           child: Text(
-            confirmStep ? "Re-enter PIN" : "Create 4-digit PIN",
+            confirmStep
+            ? "Re-enter ${widget.typeLabel} PIN"
+            : isFirstTime
+                ? "Create ${widget.typeLabel} PIN"
+                : isChanging
+                    ? "Enter new ${widget.typeLabel} PIN"
+                    : "${widget.typeLabel} PIN Locked",
             textAlign: TextAlign.center,
             style: const TextStyle(
               fontSize: 18,
@@ -382,7 +439,7 @@ class _PinFlowState extends State<_PinFlow> {
           ),
         ),
 
-        if (widget.hasPin && !widget.otpVerified)
+        if (requiresOtp)
           Center(
             child: GestureDetector(
               onTap: widget.onForgotPin,
@@ -417,7 +474,8 @@ class _PinFlowState extends State<_PinFlow> {
           PrimaryButton(
 
             text: confirmStep ? "Set PIN" : "Confirm",
-            enabled: confirmStep ? confirmPin.length == 4 : pin.length == 4,
+            enabled: canEnterPin &&
+            (confirmStep ? confirmPin.length == 4 : pin.length == 4),
             onPressed: () {
               if (!confirmStep) {
                 setState(() => confirmStep = true);
