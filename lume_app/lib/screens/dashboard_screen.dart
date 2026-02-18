@@ -41,6 +41,7 @@ import 'package:lume_app/screens/rewards/coupons_screen.dart';
 import 'rewards/rewards_view_all_sheet.dart';
 import '../widgets/card_transaction_tile.dart';
 import 'card_centre_screen.dart';
+import 'support_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int regId;
@@ -609,6 +610,38 @@ Color get tierColor {
 }
 
 
+Widget drawerSection(String title) {
+  return Column(
+    children: [
+
+      /// TOP DIVIDER LINE
+      Container(
+        margin: const EdgeInsets.only(top: 14, bottom: 8),
+        height: 1,
+        color: const Color(0xFFE0E3EB), 
+      ),
+
+      /// TITLE
+      Padding(
+        padding: const EdgeInsets.fromLTRB(18, 6, 18, 6),
+        child: Row(
+          children: [
+            Text(
+              title.toUpperCase(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade500,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
 
 Widget buildUserAvatar(double radius) {
   if (profileImageUrl != null && profileImageUrl!.isNotEmpty) {
@@ -793,211 +826,218 @@ Widget build(BuildContext context) {
                 ],
               ),
 
-              const Divider(height: 40),
+              drawerSection("Account"),
               ListTile(
-                leading: const Icon(Icons.person_outline),
-                title: const Text("My Details"),
+                leading: const Icon(Icons.badge_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("My Profile"),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
-                    Navigator.of(context).pop();
-
-                    final updated = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StudentDetailsScreen(regId: widget.regId),
-                      ),
-                    );
-
-                    if (updated == true) {
-                      refreshStudentState();
-                    }
-                  },
+                  Navigator.pop(context);
+                  final updated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StudentDetailsScreen(regId: widget.regId),
+                    ),
+                  );
+                  if (updated == true) refreshStudentState();
+                },
               ),
+
               ListTile(
-                  leading: const Icon(Icons.payments_outlined),
-                  title: const Text("UPI & Payment Settings"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    Navigator.of(context).pop();
-
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => UpiPaymentSettingsScreen(
-                          regId: widget.regId,
-                          upiId: upiId,
-                          mobile: widget.mobile,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                // ================= EXPLORE =================
-                ListTile(
-                  leading: const Icon(Icons.school_outlined),
-                  title: const Text("Scholar"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ScholarScreen(),
-                      ),
-                    );
-                  },
-                ),
-
-                ListTile(
-                  leading: const Icon(Icons.account_balance),
-                  title: const Text("My Campus"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(context);
-                    openMyCampusApp();
-                  },
-                ),
-
-
-                ListTile(
-                  leading: const Icon(Icons.emoji_events_outlined),
-                  title: const Text("Challenges"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(context); 
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ChallengesScreen(),
-                      ),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.settings_outlined),
-                  title: const Text("App Settings"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(context); 
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AppSettingsScreen(),
-                      ),
-                    );
-                  },
-                ),
-
-
-                // ================= SUPPORT =================
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      "Support",
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ),
-                ),
-
-                ListTile(
-                  leading: const Icon(Icons.help_outline),
-                  title: const Text("Support"),
-                  subtitle: const Text("Student Support"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {    
-                  },
-                ),
-
-                // ================= ABOUT =================
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      "About",
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ),
-                ),
-
-               ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text("About Us"),
+                leading: const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("UPI & Payments"),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
-                  Navigator.pop(context); 
+                  Navigator.pop(context);
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const AboutUsScreen(),
+                      builder: (_) => UpiPaymentSettingsScreen(
+                        regId: widget.regId,
+                        upiId: upiId,
+                        mobile: widget.mobile,
+                      ),
                     ),
                   );
                 },
               ),
 
-                ListTile(
-                  leading: const Icon(Icons.description_outlined),
-                  title: const Text("Terms & Conditions"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const TermsConditionsScreen(),
-                      ),
-                    );
-                  },
-                ),
-
-                ListTile(
-                  leading: const Icon(Icons.privacy_tip_outlined),
-                  title: const Text("Privacy Policy"),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(context); 
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const PrivacyPolicyScreen(),
-                      ),
-                    );
-                  },
-                ),
-
-
-                // ================= APP VERSION =================
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Center(
-                    child: Text(
-                    appVersion.isEmpty ? "" : "App Version $appVersion",
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  ),
-                ),
-              const SizedBox(height: 20),
               ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text("Logout"),
-                onTap: logout,
+                leading: const Icon(Icons.credit_card_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("Card Centre"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CardCentreScreen(
+                        regId: widget.regId,
+                        maskedNumber: "",
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.card_giftcard_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("Rewards"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    currentIndex = 3;
+                    _pageController.jumpToPage(3);
+                  });
+                },
+              ),
+
+              drawerSection("Explore"),
+
+              ListTile(
+                leading: const Icon(Icons.school_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("Scholar"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const ScholarScreen()));
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.apartment_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("My Campus"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  openMyCampusApp();
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.emoji_events_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("Challenges"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const ChallengesScreen()));
+                },
+              ),
+
+              drawerSection("Support"),
+
+              ListTile(
+                leading: const Icon(Icons.support_agent_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("Help & Support"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const SupportScreen()));
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.tune_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("App Settings"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AppSettingsScreen()));
+                },
+              ),
+
+
+              drawerSection("About"),
+
+              ListTile(
+                leading: const Icon(Icons.info_outline, color: Color(0xFF4C6EF5)),
+                title: const Text("About Lume"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AboutUsScreen()));
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.description_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("Terms & Conditions"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const TermsConditionsScreen()));
+                },
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined, color: Color(0xFF4C6EF5)),
+                title: const Text("Privacy Policy"),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()));
+                },
               ),
 
               const SizedBox(height: 20),
+              /// LOGOUT DIVIDER
+              Container(
+                margin: const EdgeInsets.only(top: 20, bottom: 6),
+                height: 1.4,
+                color: const Color(0xFFD3D7E3),
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text(
+                  "Logout",
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onTap: logout,
+              ),
+
+              const SizedBox(height: 18),
+
+              /// APP VERSION FOOTER
+              Center(
+                child: Column(
+                  children: const [
+
+                    Text(
+                      "LUME",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF4C6EF5),
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+
+                    SizedBox(height: 4),
+
+                    Text(
+                      "Version 1.0.0",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
             ],
           ),
           ),

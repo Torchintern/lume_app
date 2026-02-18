@@ -242,7 +242,7 @@ def upload_profile_image():
 
     conn = get_db_connection()
     c = conn.cursor()
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
 
     c.execute("""
         UPDATE registered_students
@@ -253,7 +253,7 @@ def upload_profile_image():
     c.close()
     conn.close()
 
-    image_url = f"http://192.168.0.3:5000/{path}"
+    image_url = f"http://192.168.0.4:5000/{path}"
     return {"image_url": image_url}, 200
 
 

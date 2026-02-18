@@ -3,6 +3,10 @@ import '../services/api_service.dart';
 import 'pin_settings_screen.dart';
 import 'pin_verify_screen.dart';
 import 'card_controls_screen.dart';
+import 'card_benefits_screen.dart';
+import 'support_screen.dart';
+
+
 class CardCentreScreen extends StatefulWidget {
   final int regId;
   final String maskedNumber;
@@ -1237,16 +1241,36 @@ Future<bool?> _confirmReplaceDialog() {
 
                 /// BENEFIT
                 tile(
-                  icon: Icons.card_giftcard,
-                  title: "Card benefits",
-                ),
+                icon: Icons.card_giftcard,
+                title: "Card benefits",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CardBenefitsScreen(
+                        maskedNumber: widget.maskedNumber,
+                      ),
+                    ),
+                  );
+                },
+              ),
+
                 divider(),
 
                 /// HELP
                 tile(
-                  icon: Icons.help_outline,
-                  title: "Help",
-                ),
+                icon: Icons.help_outline,
+                title: "Help",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SupportScreen(),
+                    ),
+                  );
+                },
+              ),
+
               ],
             ),
           ),

@@ -229,90 +229,160 @@ Future<void> _toggleBiometric(bool value) async {
     );
   }
 
+  Widget settingTile({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  VoidCallback? onTap,
+  Widget? trailing,
+}) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: const [
+        BoxShadow(color: Colors.black12, blurRadius: 12),
+      ],
+    ),
+    child: ListTile(
+      leading: Container(
+        height: 44,
+        width: 44,
+        decoration: const BoxDecoration(
+          color: Color(0xFFE8ECFF),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Color(0xFF4C6EF5)),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle),
+      trailing: trailing ?? const Icon(Icons.chevron_right),
+      onTap: onTap,
+    ),
+  );
+}
+
+
   // ================= MAIN UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("App Settings"),
-        centerTitle: true,
-      ),
+    backgroundColor: const Color(0xFFF6F7FB),
+    appBar: AppBar(
+    title: const Text("App Settings"),
+    backgroundColor: Colors.white,
+    foregroundColor: Colors.black,
+    elevation: 0,
+  ),
+
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // ================= NOTIFICATIONS =================
-          ListTile(
-            leading: const Icon(Icons.notifications_outlined),
-            title: const Text("Notifications"),
-            subtitle: const Text("Manage push notifications"),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              await _openAppInfo();
-            },
+          settingTile(
+            icon: Icons.notifications_outlined,
+            title: "Notifications",
+            subtitle: "Manage push notifications",
+            onTap: _openAppInfo,
           ),
-
-          const Divider(),
-
           // ================= THEME =================
-          ListTile(
-            leading: const Icon(Icons.dark_mode_outlined),
-            title: const Text("Theme"),
-            subtitle: const Text("Light / Dark mode"),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              _showThemeBottomSheet(context);
-            },
+          settingTile(
+            icon: Icons.palette_outlined,
+            title: "Theme",
+            subtitle: "Light / Dark mode",
+            onTap: () => _showThemeBottomSheet(context),
           ),
-
-          const Divider(),
 
           // ================= LANGUAGE =================
-          ListTile(
-            leading: const Icon(Icons.language_outlined),
-            title: const Text("Language"),
-            subtitle: const Text("Change app language"),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              _showLanguageBottomSheet(context);
-            },
+          settingTile(
+            icon: Icons.language_outlined,
+            title: "Language",
+            subtitle: "Change app language",
+            onTap: () => _showLanguageBottomSheet(context),
           ),
 
-          const Divider(),
           const SizedBox(height: 16),
 
         // ================= SECURITY HEADING =================
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Text(
-            "Security",
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey,
+        Row(
+        children: [
+          Container(
+            width: 4,
+            height: 18,
+            decoration: BoxDecoration(
+              color: const Color(0xFF4C6EF5),
+              borderRadius: BorderRadius.circular(4),
             ),
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            "SECURITY",
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+
+
+        // ================= APP LOCK =================
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 12)],
+          ),
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.lock_outline, color: Color(0xFF4C6EF5)),
+            title: const Text("App Lock", style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text("Require screen lock to open app"),
+            value: appLockEnabled,
+            onChanged: _toggleAppLock,
           ),
         ),
 
-        // ================= APP LOCK =================
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          secondary: const Icon(Icons.lock_outline),
-          title: const Text("App Lock"),
-          subtitle: const Text("Require screen lock to open app"),
-          value: appLockEnabled,
-          onChanged: _toggleAppLock,
-        ),
 
         // ================= BIOMETRIC =================
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          secondary: const Icon(Icons.fingerprint),
-          title: const Text("Biometric Unlock"),
-          subtitle: const Text("Use fingerprint or face ID"),
-          value: biometricEnabled,
-          onChanged: appLockEnabled ? _toggleBiometric : null,
-        ),
-
+        Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: const [
+                BoxShadow(color: Colors.black12, blurRadius: 12),
+              ],
+            ),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: Container(
+                height: 44,
+                width: 44,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8ECFF),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.fingerprint,
+                  color: Color(0xFF4C6EF5),
+                ),
+              ),
+              title: const Text(
+                "Biometric Unlock",
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text("Use fingerprint or face ID"),
+              value: biometricEnabled,
+              onChanged: appLockEnabled ? _toggleBiometric : null,
+            ),
+          ),
         ],
       ),
     );
