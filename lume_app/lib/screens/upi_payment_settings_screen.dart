@@ -8,12 +8,14 @@ class UpiPaymentSettingsScreen extends StatefulWidget {
   final String? upiId;
   final String mobile;
   final int regId;
+  final String walletStatus;
 
   const UpiPaymentSettingsScreen({
     super.key,
     required this.upiId,
     required this.mobile,
     required this.regId,
+    required this.walletStatus,
   });
 
   @override
@@ -30,7 +32,7 @@ class _UpiPaymentSettingsScreenState
   bool upiCopied = false;
   bool _biometricProcessing = false;
   String get _biometricKey => "biometric_payment_${widget.regId}";
-
+  bool get walletActive => widget.walletStatus == "active";
   @override
   void initState() {
     super.initState();
@@ -112,6 +114,79 @@ class _UpiPaymentSettingsScreenState
     });
   }
 
+  void _showWalletActivationDialog() {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 70,
+              width: 70,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.lock_outline,
+                color: Color(0xFF4C6EF5),
+                size: 34,
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              "Activate Wallet",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              "You need an active wallet to create a UPI ID.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  "OK",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
   // ================= COPY UPI =================
   void _copyUpiId() async {
     await Clipboard.setData(
@@ -196,13 +271,20 @@ class _UpiPaymentSettingsScreenState
                             child: (widget.upiId == null ||
                                     widget.upiId!.isEmpty)
                                 ? GestureDetector(
-                                    onTap: () => showCreateUpiDialog(
-                                      context: context,
-                                      regId: widget.regId,
-                                      onSuccess: () {
-                                        Navigator.pop(context, true);
-                                      },
-                                    ),
+                                    onTap: () {
+                                      if (!walletActive) {
+                                        _showWalletActivationDialog();
+                                        return;
+                                      }
+
+                                      showCreateUpiDialog(
+                                        context: context,
+                                        regId: widget.regId,
+                                        onSuccess: () {
+                                          Navigator.pop(context, true);
+                                        },
+                                      );
+                                    },
                                     child: const Text(
                                       "+ Create UPI ID",
                                       maxLines: 1,
@@ -309,8 +391,9 @@ class _UpiPaymentSettingsScreenState
                           Switch(
                             value: biometricEnabled,
                             activeColor: const Color(0xFF4C6EF5),
-                            onChanged: biometricSupported &&
-                                    !_biometricProcessing
+                            onChanged: (biometricSupported &&
+                                    !_biometricProcessing &&
+                                    walletActive)
                                 ? (v) => _handleBiometricToggle(v)
                                 : null,
                           ),
@@ -320,7 +403,9 @@ class _UpiPaymentSettingsScreenState
                       const SizedBox(height: 10),
 
                       Text(
-                        biometricSupported
+                        !walletActive
+                        ? "Activate wallet to enable biometric payments."
+                        : biometricSupported
                             ? "Payments upto ₹10,000 using fingerprint.\nNo PIN required."
                             : "Biometric authentication is not available on this device.",
                         style: const TextStyle(

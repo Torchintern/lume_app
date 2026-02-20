@@ -128,9 +128,12 @@ String _month(int m) {
 
   // ================= LOAD DETAILS =================
   Future<void> loadDetails() async {
+    if (!mounted) return;
     setState(() => loading = true);
 
     final data = await ApiService.getStudentDetails(widget.regId);
+
+    if (!mounted) return;
     setState(() {
       details = data;
       if (data["upi_id"] != null && data["upi_id"].toString().isNotEmpty) {
@@ -150,8 +153,11 @@ String _month(int m) {
   try {
     LocationPermission permission = await Geolocator.requestPermission();
 
+    if (!mounted) return;
+
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
       setState(() {
         weatherLoading = false;
       });
@@ -159,6 +165,7 @@ String _month(int m) {
     }
 
     final position = await Geolocator.getCurrentPosition();
+    if (!mounted) return;
 
     final lat = position.latitude;
     final lon = position.longitude;
@@ -167,18 +174,21 @@ String _month(int m) {
         "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true";
 
     final res = await http.get(Uri.parse(url));
+    if (!mounted) return;
 
     final data = jsonDecode(res.body);
 
     final temp = data["current_weather"]["temperature"];
     final code = data["current_weather"]["weathercode"];
 
+    if (!mounted) return;
     setState(() {
       liveWeatherTemp = temp.toString();
       liveWeatherCondition = weatherCodeToText(code);
       weatherLoading = false;
     });
   } catch (e) {
+    if (!mounted) return;
     setState(() {
       weatherLoading = false;
     });
@@ -220,7 +230,7 @@ String _month(int m) {
           if (res) {
             aadhaarCtrl.clear();
             aadhaarMessage = "Aadhaar verified successfully";
-            await loadDetails();
+            if (mounted) await loadDetails();
           } else {
             setState(() {
               aadhaarMessage = "Aadhaar verification failed";
@@ -259,7 +269,7 @@ String _month(int m) {
 
               panMessage = "PAN verified successfully";
 
-              await loadDetails();
+              if (mounted) await loadDetails();
             } else {
             setState(() {
               panMessage = "PAN verification failed";

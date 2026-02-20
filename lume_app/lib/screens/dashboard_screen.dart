@@ -393,6 +393,112 @@ void _startBackgroundRefresh() {
   );
 }
 
+  void showWalletActivationRequired() {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+
+            Container(
+              height: 70,
+              width: 70,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.account_balance_wallet_outlined,
+                color: Color(0xFF4C6EF5),
+                size: 34,
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            const Text(
+              "Activate Wallet",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            const Text(
+              "You need an active wallet to create a UPI ID.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Colors.grey,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.pop(context);
+
+                  final updated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StudentDetailsScreen(
+                        regId: widget.regId,
+                      ),
+                    ),
+                  );
+
+                  if (updated == true) {
+                    refreshStudentState();
+                  }
+                },
+                child: const Text(
+                  "Complete KYC",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Maybe later",
+                style: TextStyle(
+                  color: Color(0xFF4C6EF5),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
 @override
 void initState() {
@@ -420,7 +526,9 @@ void initState() {
   loadUnreadCount();
   loadUnrevealedRewardsCount();
   loadCashWon();
-  refreshStudentState();
+  refreshStudentState().then((_) {
+    _redirectIfWalletInactive();
+  });
   Future.delayed(const Duration(seconds: 2), () {
     loadUnrevealedRewardsCount();
     _startBackgroundRefresh();
@@ -429,6 +537,25 @@ void initState() {
 
 }
 
+void _redirectIfWalletInactive() {
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    if (!mounted) return;
+
+    // ONLY check wallet status
+    if (walletStatus == "active") return;
+
+    final updated = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StudentDetailsScreen(regId: widget.regId),
+      ),
+    );
+
+    if (updated == true && mounted) {
+      await refreshStudentState();
+    }
+  });
+}
 
 Future<void> _persistRegId() async {
   final prefs = await SharedPreferences.getInstance();
@@ -542,37 +669,43 @@ Future<void> openWalletPinFlow() async {
 
 
 // Refresh student state
-Future<void> refreshStudentState()
- async {
+Future<void> refreshStudentState() async {
   try {
     final data = await ApiService.getStudentDetails(widget.regId);
     if (!mounted) return;
 
     final int points =
-    int.tryParse((data["reward_points"] ?? 0).toString()) ?? 0;
+        int.tryParse((data["reward_points"] ?? 0).toString()) ?? 0;
 
     final String tier =
         (data["tier"] ?? "silver").toString().toLowerCase();
+    final bool aadhaar = data["aadhaar_verified"] == 1;
+    final bool pan = data["pan_verified"] == 1;
 
-    final double percent =
-        double.tryParse(data["kyc_completion_percent"].toString()) ?? 0.0;
+    double progress;
+    if (aadhaar && pan) {
+      progress = 1.0;
+    } else if (aadhaar) {
+      progress = 0.75;
+    } else {
+      progress = 0.56;
+    }
 
     setState(() {
-      aadhaarVerified = data["aadhaar_verified"] == 1;
-      panVerified = data["pan_verified"] == 1;
+      aadhaarVerified = aadhaar;
+      panVerified = pan;
       walletStatus = data["wallet_status"] ?? "inactive";
       upiId = data["upi_id"];
       profileImageUrl = data["profile_image"];
 
       rewardPoints = points;
       backendTier = tier;
-  
 
-      kycProgress = percent / 100;
-      isKycCompleted = kycProgress == 1.0;
+      kycProgress = progress;
+      isKycCompleted = progress == 1.0;
     });
-    await loadUnrevealedRewardsCount();
 
+    await loadUnrevealedRewardsCount();
   } catch (_) {}
 }
 
@@ -747,13 +880,20 @@ Widget build(BuildContext context) {
               const SizedBox(height: 2),
               upiId == null || upiId!.isEmpty
             ? GestureDetector(
-                onTap: () => showCreateUpiDialog(
-                  context: context,
-                  regId: widget.regId,
-                  onSuccess: () {
-                    refreshStudentState();
-                  },
-                ),
+                onTap: () {
+                  if (walletStatus != "active") {
+                    showWalletActivationRequired();
+                    return;
+                  }
+
+                  showCreateUpiDialog(
+                    context: context,
+                    regId: widget.regId,
+                    onSuccess: () {
+                      refreshStudentState();
+                    },
+                  );
+                },
                 child: const Text(
                   "+ Create UPI ID",
                   style: TextStyle(
@@ -856,6 +996,7 @@ Widget build(BuildContext context) {
                         regId: widget.regId,
                         upiId: upiId,
                         mobile: widget.mobile,
+                        walletStatus: walletStatus,
                       ),
                     ),
                   );
@@ -1159,6 +1300,7 @@ Widget build(BuildContext context) {
                     regId: widget.regId,
                     isKycCompleted: isKycCompleted,
                     kycProgress: kycProgress,
+                    walletStatus: walletStatus,
                   ),
 
                     _WalletView(
@@ -1315,7 +1457,9 @@ class _PayView extends StatefulWidget {
 }
 class _PayViewState extends State<_PayView>
     with SingleTickerProviderStateMixin {
-
+    
+  bool get walletActive =>
+    context.findAncestorStateOfType<DashboardScreenState>()?.walletStatus == "active";
   bool _animRunning = true;
   double balance = 0.0;
   bool loading = true;
@@ -1366,7 +1510,6 @@ class _PayViewState extends State<_PayView>
 }
 
 
-
   List<Map<String, dynamic>> dedupeRecentPayees(List<dynamic> list) {
   final seen = <String>{};
   final result = <Map<String, dynamic>>[];
@@ -1410,24 +1553,141 @@ String getKycMessage() {
 }
 
   @override
-void initState() {
-  super.initState();
+  void initState() {
+    super.initState();
 
-  _startInnerAnimationLoop();
-  _loadRecentPayees();
-  _loadBalance();
-  _loadSplitRequests();
-  if (widget.openSplitId != null) {
-    Future.delayed(const Duration(milliseconds: 600), () {
-      _openSplitFromNotification(widget.openSplitId!);
+    _startInnerAnimationLoop();
+    _loadRecentPayees();
+    _loadBalance();
+    _loadSplitRequests();
+    if (widget.openSplitId != null) {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        _openSplitFromNotification(widget.openSplitId!);
+      });
+    }
+    upiController.addListener(() {
+      if (mounted) setState(() {});
     });
   }
-  upiController.addListener(() {
-    if (mounted) setState(() {});
-  });
+
+  void _showWalletLockedMessage() {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+
+            // ICON
+            Container(
+              height: 70,
+              width: 70,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.lock_outline_rounded,
+                color: Color(0xFF4C6EF5),
+                size: 34,
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            const Text(
+              "Activate Wallet",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            const Text(
+              "Complete Aadhaar & PAN verification to activate your wallet and start making payments.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Colors.grey,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // PRIMARY BUTTON
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.pop(context);
+
+                  final updated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StudentDetailsScreen(
+                        regId: widget.regId,
+                      ),
+                    ),
+                  );
+
+                  if (updated == true) {
+                    final dashboard =
+                        context.findAncestorStateOfType<DashboardScreenState>();
+                    dashboard?.refreshStudentState();
+                  }
+                },
+                child: const Text(
+                  "Complete KYC",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // SECONDARY BUTTON
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  "Maybe later",
+                  style: TextStyle(
+                    color: Color(0xFF4C6EF5),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
-
-
   @override
   void dispose() {
     _animRunning = false;
@@ -1514,12 +1774,18 @@ Future<void> _loadRecentPayees() async {
   bool isUpi(String v) => v.contains('@');
 
   void openPayment(Map to, bool isWallet) async {
+    
     final dashboardState =
         context.findAncestorStateOfType<DashboardScreenState>();
 
     if (dashboardState == null || 
       dashboardState.upiId == null ||
       dashboardState.upiId!.isEmpty) {
+
+        if (!walletActive) {
+      _showWalletLockedMessage();
+      return;
+    }
     showCreateUpiDialog(
       context: context,
       regId: widget.regId,
@@ -1657,13 +1923,20 @@ Future<void> refreshBalance() async {
     (dashboardState.upiId == null ||
      dashboardState.upiId!.isEmpty))
   GestureDetector(
-    onTap: () => showCreateUpiDialog(
-      context: context,
-      regId: widget.regId,
-      onSuccess: () {
-        dashboardState.refreshStudentState();
-      },
-    ),
+    onTap: () {
+      if (!walletActive) {
+        _showWalletLockedMessage();
+        return;
+      }
+
+      showCreateUpiDialog(
+        context: context,
+        regId: widget.regId,
+        onSuccess: () {
+          dashboardState.refreshStudentState();
+        },
+      );
+    },
     child: Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
@@ -1754,55 +2027,65 @@ const SizedBox(height: 16),
 
 // ================= TAP & PAY =================
 GestureDetector(
-  onTap: () async {
-    final dashboardState =
-        context.findAncestorStateOfType<DashboardScreenState>();
+  onTap: walletActive
+      ? () async {
+        
+          final dashboardState =
+              context.findAncestorStateOfType<DashboardScreenState>();
 
-    if (dashboardState == null ||
-        dashboardState.upiId == null ||
-        dashboardState.upiId!.isEmpty) {
-      showCreateUpiDialog(
-        context: context,
-        regId: widget.regId,
-        onSuccess: () {
-          dashboardState?.refreshStudentState();
-        },
-      );
-      return;
-    }
+          if (dashboardState == null ||
+              dashboardState.upiId == null ||
+              dashboardState.upiId!.isEmpty) {
 
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => QrScannerScreen(regId: widget.regId),
-      ),
-    );
+                if (!walletActive) {
+          _showWalletLockedMessage();
+          return;
+        }
+            showCreateUpiDialog(
+              context: context,
+              regId: widget.regId,
+              onSuccess: () {
+                dashboardState?.refreshStudentState();
+              },
+            );
+            return;
+          }
 
-    if (result != null) {
-      final payResult = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaymentAmountScreen(
-            regId: widget.regId,
-            payee: result,
-            payeeName: "QR Payment",
-            isWalletTransfer: false,
-          ),
-        ),
-      );
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => QrScannerScreen(regId: widget.regId),
+            ),
+          );
 
-      if (payResult != null) {
-      await dashboardState.refreshWalletNow();
-      await dashboardState.refreshStudentState();
-      await dashboardState.refreshAllCounts();
-    }
-    }
-  },
+          if (result != null) {
+            final payResult = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PaymentAmountScreen(
+                  regId: widget.regId,
+                  payee: result,
+                  payeeName: "QR Payment",
+                  isWalletTransfer: false,
+                ),
+              ),
+            );
+
+            if (payResult != null) {
+              await dashboardState.refreshWalletNow();
+              await dashboardState.refreshStudentState();
+              await dashboardState.refreshAllCounts();
+            }
+          }
+        }
+      : _showWalletLockedMessage,
 
   child: Container(
     height: 130,
     decoration: BoxDecoration(
-      color: const Color(0xFF4C6EF5),
+      color: walletActive
+    ? const Color(0xFF4C6EF5)
+    : Colors.grey.shade400,
       borderRadius: BorderRadius.circular(26),
     ),
     child: Center(
@@ -1849,6 +2132,7 @@ Container(
     Expanded(
       child: TextField(
         controller: upiController,
+        enabled: walletActive,
         decoration: const InputDecoration(
           hintText: "Pay UPI ID or mobile number",
           border: InputBorder.none,
@@ -1972,17 +2256,18 @@ if (!loadingRecents &&
               final String? profileImage = r["profile_image"];
 
               return GestureDetector(
-                onTap: () {
-                  openPayment(
-                  {
-                    "name": r["name"],
-                    "identifier": r["identifier"],
-                    "profile_image": r["profile_image"],
-                  },
-                  isWallet,
-                );
-
-                },
+                onTap: walletActive
+                  ? () {
+                      openPayment(
+                        {
+                          "name": r["name"],
+                          "identifier": r["identifier"],
+                          "profile_image": r["profile_image"],
+                        },
+                        isWallet,
+                      );
+                    }
+                  : _showWalletLockedMessage,
                 child: Container(
                   width: 76,
                   margin: const EdgeInsets.only(right: 12),
@@ -2067,13 +2352,15 @@ if (!loadingRecents &&
 
               title: Text(s["name"]),
               subtitle: Text(s["identifier"]),
-              onTap: () => openPayment(
+              onTap: walletActive
+                ? () => openPayment(
                       {
                         "name": s["name"],
                         "identifier": s["identifier"],
                       },
                       s["isWallet"] ?? true,
-                    ),
+                    )
+                : _showWalletLockedMessage,
             );
           },
         ),
@@ -2202,7 +2489,44 @@ AnimatedSize(
       ],
     ),
 
-    child: SingleChildScrollView(
+    child: loadingSplitRequests
+    ? const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(child: CircularProgressIndicator()),
+      )
+
+    : splitRequests.isEmpty
+        ? Padding(
+            padding: const EdgeInsets.symmetric(vertical: 50),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.call_split,
+                  size: 48,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  "No split payments",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Any shared expenses will appear here",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          )
+
+        :  SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
         children: splitRequests.map((split) {
@@ -3643,18 +3967,20 @@ Container(
       ? GestureDetector(
           onTap: () {
             final dashboardState =
-    context.findAncestorStateOfType<DashboardScreenState>();
+                context.findAncestorStateOfType<DashboardScreenState>();
 
-if (dashboardState == null) return;
-
-showCreateUpiDialog(
-  context: context,
-  regId: dashboardState.widget.regId,
-  onSuccess: () {
-    dashboardState.refreshStudentState();
-  },
-);
-
+            if (dashboardState == null) return;
+            if (dashboardState.walletStatus != "active") {
+              dashboardState.showWalletActivationRequired();
+              return;
+            }
+            showCreateUpiDialog(
+              context: context,
+              regId: dashboardState.widget.regId,
+              onSuccess: () {
+                dashboardState.refreshStudentState();
+              },
+            );
           },
           child: const Text(
             "+ Create UPI ID",
@@ -3695,25 +4021,24 @@ const SizedBox(height: 16),
           // ================= MY QR CODE =================
           GestureDetector(
             onTap: () {
+              final dashboardState =
+                  context.findAncestorStateOfType<DashboardScreenState>();
 
+              if (dashboardState == null) return;
               if (widget.upiId.isEmpty) {
-                final dashboardState =
-    context.findAncestorStateOfType<DashboardScreenState>();
-
-if (dashboardState == null) return;
-
-showCreateUpiDialog(
-  context: context,
-  regId: dashboardState.widget.regId,
-  onSuccess: () {
-    dashboardState.refreshStudentState();
-  },
-);
-
+                if (dashboardState.walletStatus != "active") {
+                  dashboardState.showWalletActivationRequired();
+                  return;
+                }
+                showCreateUpiDialog(
+                  context: context,
+                  regId: dashboardState.widget.regId,
+                  onSuccess: () {
+                    dashboardState.refreshStudentState();
+                  },
+                );
                 return;
               }
-    final dashboardState =
-    context.findAncestorStateOfType<DashboardScreenState>();
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -3721,7 +4046,7 @@ showCreateUpiDialog(
                     name: widget.name,
                     upiId: widget.upiId,
                     walletActive: widget.walletStatus == "active",
-                    profileImageUrl: dashboardState?.profileImageUrl,
+                    profileImageUrl: dashboardState.profileImageUrl,
                   ),
                 ),
               );
@@ -4292,19 +4617,21 @@ class _CardView extends StatefulWidget {
   final int regId;
   final bool isKycCompleted;
   final double kycProgress;
+  final String walletStatus;
 
   const _CardView({
     required this.regId,
     required this.isKycCompleted,
     required this.kycProgress,
+    required this.walletStatus,
   });
-
 
   @override
   State<_CardView> createState() => _CardViewState();
 }
 
 class _CardViewState extends State<_CardView> with RouteAware {
+  bool get walletActive => widget.walletStatus == "active";
   bool showBalance = false;
   bool loading = true;
   double balance = 0.0;
@@ -4323,6 +4650,14 @@ class _CardViewState extends State<_CardView> with RouteAware {
   String cardExpiry = "";
 
 
+  @override
+  void didUpdateWidget(covariant _CardView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.kycProgress != widget.kycProgress) {
+      setState(() {});
+    }
+  }
 
   void _showLockBottomSheet() {
   showModalBottomSheet(
@@ -4655,7 +4990,114 @@ void _showLockProcessingSheet({
   );
 }
 
+void _showWalletActivationDialog() {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
 
+            Container(
+              height: 70,
+              width: 70,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.lock_outline_rounded,
+                color: Color(0xFF4C6EF5),
+                size: 34,
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            const Text(
+              "Activate Wallet",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            const Text(
+              "Complete Aadhaar & PAN verification to activate your wallet and start making payments.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Colors.grey,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.pop(context);
+
+                  final updated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StudentDetailsScreen(
+                        regId: widget.regId,
+                      ),
+                    ),
+                  );
+
+                  if (updated == true) {
+                    final dashboard =
+                        context.findAncestorStateOfType<DashboardScreenState>();
+                    dashboard?.refreshStudentState();
+                  }
+                },
+                child: const Text(
+                  "Complete KYC",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Maybe later",
+                style: TextStyle(
+                  color: Color(0xFF4C6EF5),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   void _showCardSpendAnimation(double amount) {
   final overlay = Overlay.of(context);
@@ -5168,10 +5610,10 @@ Widget getCardLogo() {
 
                     GestureDetector(
                       onTap: () {
-                        if (loading) return;
-                        setState(() => showBalance = !showBalance);
-                      },
-                      child: loading
+                      if (loading || !walletActive) return;
+                      setState(() => showBalance = !showBalance);
+                    },
+                        child: loading
                           ? const Text(
                               "Loading...",
                               style: TextStyle(
@@ -5179,15 +5621,27 @@ Widget getCardLogo() {
                                 fontWeight: FontWeight.bold,
                               ),
                             )
-                          : Text(
-                              showBalance
-                                  ? "₹ ${balance.toStringAsFixed(2)}"
-                                  : "₹ ••••••",
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
+                          : Row(
+                            children: [
+                              if (!walletActive)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 8),
+                                  child: Icon(Icons.lock, size: 18, color: Colors.grey),
+                                ),
+
+                              Text(
+                                !walletActive
+                                    ? "Locked"
+                                    : showBalance
+                                        ? "₹ ${balance.toStringAsFixed(2)}"
+                                        : "₹ ••••••",
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
+                            ],
+                          )
                     ),
                   ],
                 ),
@@ -5195,45 +5649,60 @@ Widget getCardLogo() {
                 const Spacer(),
 
                 GestureDetector(
-                  onTap: () {
-                    final dashboard =
-                        context.findAncestorStateOfType<DashboardScreenState>();
+                  onTap: walletActive
+                    ? () {
+                        final dashboard =
+                            context.findAncestorStateOfType<DashboardScreenState>();
 
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AddMoneyScreen(
-                          regId: widget.regId,
-                          fullName: dashboard?.widget.fullName ?? "",
-                          mobile: dashboard?.widget.mobile ?? "",
-                          upiId: dashboard?.widget.upiId ?? "",
-                          walletStatus: dashboard?.walletStatus ?? "active",
-                          aadhaarVerified: dashboard?.widget.aadhaarVerified ?? 1,
-                          panVerified: dashboard?.widget.panVerified ?? 1,
-                        ),
-                      ),
-                    ).then((_) => _loadBalance());
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8ECFF),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.add, color: Color(0xFF4C6EF5), size: 18),
-                        SizedBox(width: 4),
-                        Text(
-                          "Add Money",
-                          style: TextStyle(
-                            color: Color(0xFF4C6EF5),
-                            fontWeight: FontWeight.w600,
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddMoneyScreen(
+                              regId: widget.regId,
+                              fullName: dashboard?.widget.fullName ?? "",
+                              mobile: dashboard?.widget.mobile ?? "",
+                              upiId: dashboard?.widget.upiId ?? "",
+                              walletStatus: dashboard?.walletStatus ?? "inactive",
+                              aadhaarVerified: dashboard?.widget.aadhaarVerified ?? 1,
+                              panVerified: dashboard?.widget.panVerified ?? 1,
+                            ),
                           ),
-                        ),
-                      ],
+                        ).then((_) => _loadBalance());
+                      }
+                    : () {
+                        _showWalletActivationDialog();
+                      },
+
+                  child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: walletActive
+                            ? const Color(0xFFE8ECFF)
+                            : Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            walletActive ? Icons.add : Icons.lock,
+                            color: walletActive
+                                ? const Color(0xFF4C6EF5)
+                                : Colors.grey,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            walletActive ? "Add Money" : "Locked",
+                            style: TextStyle(
+                              color: walletActive
+                                  ? const Color(0xFF4C6EF5)
+                                  : Colors.grey,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ),
               ],
             ),
