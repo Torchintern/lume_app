@@ -1,9 +1,21 @@
+# import mysql.connector
+#
+# def get_db_connection():
+#     return mysql.connector.connect(
+#         host="localhost",
+#         user="root",
+#         password="Harshith@799",
+#         database="student_wallet"
+#     )
+
 import mysql.connector
+import os
 
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Harshith@799",
-        database="student_wallet"
+        host=os.getenv("DB_HOST", "host.docker.internal"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME"),
+        port=3306
     )

@@ -1,0 +1,11 @@
+services:
+  studentwallet_web:
+    build: .
+    container_name: studentwallet_container
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8003:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
