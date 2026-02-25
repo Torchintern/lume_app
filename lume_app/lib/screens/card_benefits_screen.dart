@@ -182,7 +182,7 @@ Widget _tabButton(String text, int index) {
 
         _FeeTile(
           title: "Card replacement",
-          value: "₹149",
+          value: "No charge",
         ),
 
         _FeeTile(

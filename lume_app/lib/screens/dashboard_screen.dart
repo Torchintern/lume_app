@@ -106,7 +106,7 @@ Future<void> _checkAndAuthenticate() async {
   _authInProgress = true;
 
   final prefs = await SharedPreferences.getInstance();
-  final shouldLock = prefs.getBool("app_lock") ?? false;
+  final shouldLock = prefs.getBool("app_lock_${widget.regId}") ?? false;
 
   if (!shouldLock) {
     if (!mounted) return;
@@ -709,6 +709,142 @@ Future<void> refreshStudentState() async {
   } catch (_) {}
 }
 
+// ================= CARD ACCESS GUARD =================
+void openCardCentreGuarded() {
+
+  final bool kycCompleted =
+      aadhaarVerified &&
+      panVerified &&
+      isKycCompleted;
+
+  if (!kycCompleted) {
+    showKycRequiredForCardDialog();
+    return;
+  }
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => CardCentreScreen(
+        regId: widget.regId,
+        maskedNumber: "",
+      ),
+    ),
+  );
+}
+
+
+void showKycRequiredForCardDialog() {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+
+            /// SAME ICON STYLE
+            Container(
+              height: 70,
+              width: 70,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.lock_outline_rounded,
+                color: Color(0xFF4C6EF5),
+                size: 34,
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            const Text(
+              "Unlock Card Feature",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            const Text(
+              "Complete Aadhaar & PAN verification to activate your wallet and start using your LUME Card.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Colors.grey,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            /// COMPLETE KYC BUTTON
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () async {
+
+                  Navigator.pop(context);
+
+                  final updated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StudentDetailsScreen(
+                        regId: widget.regId,
+                      ),
+                    ),
+                  );
+
+                  /// refresh dashboard after KYC
+                  if (updated == true && mounted) {
+                    await refreshStudentState();
+                  }
+                },
+                child: const Text(
+                  "Complete KYC",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Maybe later",
+                style: TextStyle(
+                  color: Color(0xFF4C6EF5),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 
 
 double get tierProgress {
@@ -1009,15 +1145,7 @@ Widget build(BuildContext context) {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CardCentreScreen(
-                        regId: widget.regId,
-                        maskedNumber: "",
-                      ),
-                    ),
-                  );
+                  openCardCentreGuarded();
                 },
               ),
 
@@ -1087,8 +1215,12 @@ Widget build(BuildContext context) {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const AppSettingsScreen()));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AppSettingsScreen(userId: widget.regId),
+                    ),
+                  );
                 },
               ),
 
@@ -6050,7 +6182,7 @@ class _LumeVerticalFlipCardState extends State<_LumeVerticalFlipCard>
           const SizedBox(height: 6),
 
           const Text(
-            "Visa Prepaid",
+            "Rupay Prepaid",
             style: TextStyle(
               color: Colors.white70,
               fontSize: 14,

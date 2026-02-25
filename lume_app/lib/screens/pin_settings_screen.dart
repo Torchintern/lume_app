@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/otp_bottom_sheet.dart';
 import '../widgets/primary_button.dart';
+import 'student_details_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PinSettingsScreen extends StatefulWidget {
@@ -23,7 +24,9 @@ class PinSettingsScreen extends StatefulWidget {
 class _PinSettingsScreenState extends State<PinSettingsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
+  bool kycCompleted = false;
+  bool aadhaarVerified = false;
+  bool panVerified = false;
   bool walletHasPin = false;
   bool cardHasPin = false;
 
@@ -32,19 +35,34 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
 
   bool loading = true;
 
-  @override
+ @override
   void initState() {
     super.initState();
-   _tabController = TabController(
+
+    _tabController = TabController(
       length: 2,
       vsync: this,
       initialIndex: widget.initialTab == "card" ? 1 : 0,
     );
+
     if (widget.forceSetup && widget.initialTab == "card") {
       _tabController.index = 1;
     }
+    _tabController.addListener(() {
+      if (_tabController.index == 1 && !kycCompleted) {
+        Future.microtask(() {
+          _tabController.index = 0;
+          _showKycRequiredDialog();
+        });
+      }
+    });
 
     _loadPinStatus();
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (widget.initialTab == "card" && !kycCompleted) {
+        _showKycRequiredDialog();
+      }
+    });
   }
 
   @override
@@ -56,35 +74,47 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
 
   // ================= LOAD PIN STATUS =================
   Future<void> _loadPinStatus() async {
-    try {
-      final responses = await Future.wait([
-        ApiService.getPinStatus(widget.regId),
-        ApiService.getCardStatus(widget.regId),
-      ]);
+  try {
+    final responses = await Future.wait([
+      ApiService.getPinStatus(widget.regId),
+      ApiService.getCardStatus(widget.regId),
+      ApiService.getStudentDetails(widget.regId),
+    ]);
 
-      final pin = responses[0];
-      final card = responses[1];
+    final pin = responses[0];
+    final card = responses[1];
+    final student = responses[2];
 
-      final bool cardPending = card["card_status"] != "active";
+    final bool aadhaar = student["aadhaar_verified"] == 1;
+    final bool pan = student["pan_verified"] == 1;
 
-      if (!mounted) return;
+    final bool completed = aadhaar && pan;
 
-      setState(() {
-        walletHasPin = pin["wallet"] == true;
+    final bool cardPending = card["card_status"] != "active";
 
-        cardHasPin = cardPending ? false : pin["card"] == true;
+    if (!mounted) return;
 
-        loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        walletHasPin = false;
-        cardHasPin = false;
-        loading = false;
-      });
-    }
+    setState(() {
+      walletHasPin = pin["wallet"] == true;
+
+      cardHasPin = completed && !cardPending ? pin["card"] == true : false;
+
+      aadhaarVerified = aadhaar;
+      panVerified = pan;
+      kycCompleted = completed;
+
+      loading = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+    setState(() {
+      walletHasPin = false;
+      cardHasPin = false;
+      kycCompleted = false;
+      loading = false;
+    });
   }
+}
 
 
 
@@ -248,6 +278,118 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
   );
 }
 
+void _showKycRequiredDialog() {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+
+            /// SAME ICON STYLE AS DASHBOARD
+            Container(
+              height: 70,
+              width: 70,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8ECFF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.lock_outline_rounded,
+                color: Color(0xFF4C6EF5),
+                size: 34,
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            const Text(
+              "Unlock Card Feature",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            const Text(
+              "Complete Aadhaar & PAN verification to activate your wallet and start using your LUME Card.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Colors.grey,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            /// PRIMARY BUTTON (Complete KYC)
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF4C6EF5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () async {
+
+                  Navigator.pop(context); // close dialog
+
+                  final updated = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StudentDetailsScreen(
+                        regId: widget.regId,
+                      ),
+                    ),
+                  );
+
+                  /// After KYC completed → close PIN screen
+                  if (updated == true && mounted) {
+                    Navigator.pop(context, true);
+                  }
+                },
+                child: const Text(
+                  "Complete KYC",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            /// SECONDARY BUTTON
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Maybe later",
+                style: TextStyle(
+                  color: Color(0xFF4C6EF5),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
   // ================= UI =================
   @override
   Widget build(BuildContext context) {
@@ -331,10 +473,9 @@ class _PinSettingsScreenState extends State<PinSettingsScreen>
     Expanded(
       child: TabBarView(
       controller: _tabController,
-      physics: widget.forceSetup
+      physics: (!kycCompleted || widget.forceSetup)
           ? const NeverScrollableScrollPhysics()
           : null,
-
         children: [
 
             _PinFlow(

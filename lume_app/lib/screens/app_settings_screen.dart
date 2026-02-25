@@ -9,7 +9,9 @@ import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppSettingsScreen extends StatefulWidget {
-  const AppSettingsScreen({super.key});
+  final int userId;
+
+  const AppSettingsScreen({super.key, required this.userId});
 
   @override
   State<AppSettingsScreen> createState() => _AppSettingsScreenState();
@@ -20,18 +22,22 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
 bool appLockEnabled = false;
 bool biometricEnabled = false;
+late String appLockKey;
+late String biometricKey;
 
 @override
 void initState() {
   super.initState();
+  appLockKey = "app_lock_${widget.userId}";
+  biometricKey = "biometric_${widget.userId}";
   _loadSecurityPrefs();
 }
 
 Future<void> _loadSecurityPrefs() async {
   final prefs = await SharedPreferences.getInstance();
   setState(() {
-    appLockEnabled = prefs.getBool("app_lock") ?? false;
-    biometricEnabled = prefs.getBool("biometric") ?? false;
+    appLockEnabled = prefs.getBool(appLockKey) ?? false;
+    biometricEnabled = prefs.getBool(biometricKey) ?? false;
   });
 }
 
@@ -56,7 +62,10 @@ Future<void> _toggleAppLock(bool value) async {
   }
 
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool("app_lock", value);
+  await prefs.setBool(appLockKey, value);
+  if (!value) {
+    await prefs.setBool(biometricKey, false);
+  }
 
   setState(() {
     appLockEnabled = value;
@@ -74,7 +83,8 @@ Future<void> _toggleBiometric(bool value) async {
   }
 
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool("biometric", value);
+  await prefs.setBool(biometricKey, value);
+  await prefs.setBool(appLockKey, true);
 
   setState(() {
     biometricEnabled = value;
